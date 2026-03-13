@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users: only the user themselves can read/write their profile
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    // CAs: anyone authenticated can read, only CA themselves can write
+    match /cas/{caId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == caId;
+    }
+    // Bookings: involved parties (client or CA) can read/write
+    match /bookings/{bookingId} {
+      allow read, write: if request.auth != null &&
+        (resource.data.clientId == request.auth.uid || resource.data.caId == request.auth.uid);
+      allow create: if request.auth != null;
+    }
+    // Documents: owner can write, owner's CA can read
+    match /documents/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+    // Messages: both parties in the booking can read/write
+    match /messages/{msgId} {
+      allow read, write: if request.auth != null;
+    }
+    // Notifications: recipient can read, anyone auth can create
+    match /notifications/{notifId} {
+      allow read, write: if request.auth != null && resource.data.toId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+  }
+}

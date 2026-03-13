@@ -1,0 +1,4535 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>LedgerX — India's Smartest CA Platform</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+
+    <!-- Firebase -->
+    <script>
+        // ═══ UI FUNCTIONS — load immediately, no Firebase dependency ═══
+        function el(id) { return document.getElementById(id); }
+        function v(id) { return (el(id)?.value || "").trim(); }
+
+        // AUTH MODAL
+        window.openAuth = function (tab) {
+            el("auth-overlay").classList.add("open");
+            el("auth-err").style.display = "none";
+            el("auth-msg").style.display = "none";
+            switchAuthTab(tab);
+        };
+        window.closeAuth = function () { el("auth-overlay").classList.remove("open"); };
+        window.authBgClick = function (e) { if (e.target === el("auth-overlay")) closeAuth(); };
+        window.switchAuthTab = function (t) {
+            el("tab-login").classList.toggle("active", t === "login");
+            el("tab-signup").classList.toggle("active", t === "signup");
+            el("login-form").style.display = t === "login" ? "flex" : "none";
+            el("signup-form").style.display = t === "signup" ? "flex" : "none";
+            el("auth-err").style.display = "none";
+            el("auth-msg").style.display = "none";
+            if (t === "signup") toggleCAFields();
+        };
+        window.toggleCAFields = function () {
+            const role = el("su-role")?.value, wrap = el("ca-fields");
+            if (wrap) wrap.style.display = role === "ca" ? "block" : "none";
+        };
+
+        // USER MENU
+        window.toggleUserMenu = function () {
+            const m = el("user-menu");
+            m.style.display = m.style.display === "block" ? "none" : "block";
+        };
+        window.closeUserMenu = function () {
+            const m = el("user-menu");
+            if (m) m.style.display = "none";
+        };
+        document.addEventListener("click", e => {
+            if (!e.target.closest(".nav-user") && !e.target.closest("#user-menu")) {
+                const m = el("user-menu");
+                if (m) m.style.display = "none";
+            }
+        });
+
+        // NOTIFICATIONS PANEL
+        window.toggleNotifPanel = function () {
+            const p = el("notif-panel");
+            if (!p) return;
+            p.style.display = p.style.display === "block" ? "none" : "block";
+        };
+        document.addEventListener("click", e => {
+            if (!e.target.closest("#notif-btn") && !e.target.closest("#notif-panel")) {
+                const p = el("notif-panel");
+                if (p) p.style.display = "none";
+            }
+        });
+
+        // CHATBOT
+        window.chatOpen = false;
+        window.toggleChatbot = function () {
+            window.chatOpen = !window.chatOpen;
+            const box = el("chatbox");
+            if (!box) return;
+            if (window.chatOpen) {
+                box.style.display = "flex";
+                setTimeout(() => box.classList.add("open"), 10);
+            } else {
+                box.classList.remove("open");
+                setTimeout(() => { box.style.display = "none"; }, 450);
+            }
+        };
+
+        // PAGES
+        window.showPage = function (id) {
+            document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+            el("page-" + id)?.classList.add("active");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        };
+        window.goHome = function () { showPage("home"); };
+
+        // MODALS
+        window.openModal = function (id) { el(id)?.classList.add("open"); };
+        window.closeModal = function (id) { el(id)?.classList.remove("open"); };
+
+        // TOAST
+        window.toast = function (msg, type = "info") {
+            const t = document.createElement("div");
+            t.className = "toast toast-" + type;
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => t.classList.add("show"), 10);
+            setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 400); }, 3200);
+        };
+
+        // ─── DEMO MODE FLAG ───
+        window._isDemoMode = false;
+
+        // ─── TAXBOT KNOWLEDGE BASE (works without API key) ───
+        var TAXBOT_KB = {
+            itr: {
+                keywords: ['itr', 'income tax', 'file tax', 'return', 'form 16', 'salary', 'salaried'],
+                title: 'ITR Filing — Step-by-Step',
+                steps: ['1. Collect Documents — Form 16, bank statements, investment proofs (80C), home loan certificate', '2. Choose correct ITR form — ITR-1 for salary under 50L | ITR-2 for capital gains | ITR-3 for business', '3. Login to incometax.gov.in → e-File → File Income Tax Return', '4. Pre-fill and verify — Check pre-filled data from Form 26AS and AIS carefully', '5. Claim Deductions — 80C (1.5L), 80D (health 25K), HRA, LTA, 80TTA (interest 10K)', '6. Pay Tax or Claim Refund — If tax due, pay via Challan 280 before submitting', '7. e-Verify within 30 days via Aadhaar OTP or Net Banking', 'Deadline: July 31, 2025 (FY 2024-25)']
+            },
+            gst: {
+                keywords: ['gst', 'gstin', 'gstr', 'input tax', 'itc', 'gst registration', 'invoice gst'],
+                title: 'GST Compliance — Steps and Deadlines',
+                steps: ['GSTR-1 (outward supplies) — 11th of next month (monthly) or 13th (quarterly QRMP)', 'GSTR-3B (summary return + tax payment) — 20th of next month', 'ITC Reconciliation — Match GSTR-2B with purchase register monthly', 'GSTR-9 (Annual return) — December 31 each year', 'GST Registration required if turnover > 40L (goods) or 20L (services)', 'Composition Scheme available up to 1.5 crore — file GSTR-4 quarterly', 'Late fee: 50 per day (20 per day if nil return), max 10,000']
+            },
+            tds: {
+                keywords: ['tds', 'tcs', 'form 26as', 'tax deducted', 'deduction at source', '26as'],
+                title: 'TDS — Key Requirements',
+                steps: ['Deduct TDS at applicable rates — Salary (slab rate), Rent over 50K/month (10%), Contractor (1-2%)', 'Deposit TDS by 7th of next month (March by April 30)', 'File TDS Returns — Q1: July 31 | Q2: Oct 31 | Q3: Jan 31 | Q4: May 31', 'Issue Form 16/16A to deductees within 15 days of filing', 'Check 26AS and AIS on income tax portal to verify credits', 'Penalty: 1% per month for non-deduction, 1.5% for non-deposit']
+            },
+            advance: {
+                keywords: ['advance tax', 'quarterly tax', 'self assessment', '234b', '234c'],
+                title: 'Advance Tax — Due Dates',
+                steps: ['Who must pay? Tax liability over 10,000 after TDS (individuals, businesses)', 'Q1 — 15% by June 15', 'Q2 — 45% by September 15', 'Q3 — 75% by December 15', 'Q4 — 100% by March 15', 'Interest under 234B and 234C if advance tax not paid or underpaid', 'Seniors (60+) with no business income are exempt']
+            },
+            business: {
+                keywords: ['pvt ltd', 'private limited', 'llp', 'company registration', 'incorporate', 'startup', 'opc', 'business registration'],
+                title: 'Business Registration — Process',
+                steps: ['Choose Structure — Pvt Ltd (2+ directors) | LLP (2+ partners) | OPC (solo founder)', 'Get DSC — Digital Signature Certificate for all directors (Class 3)', 'Apply DIN — Director Identification Number via MCA portal', 'Name Approval — File RUN (Reserve Unique Name) on MCA', 'File SPICe+ — Incorporation form with MoA, AoA, PAN, TAN', 'Get Certificate — CIN issued in 5-7 working days', 'Post-registration — GST, MSME, Shops Act, bank account opening', 'Govt fees approx 2,000-7,000 | CA fees 8,000-25,000']
+            },
+            savings: {
+                keywords: ['80c', '80d', 'deduction', 'save tax', 'ppf', 'elss', 'lic', 'tax saving', 'section 80', 'nps'],
+                title: 'Tax Saving — 80C and Beyond',
+                steps: ['Section 80C — 1,50,000 limit: PPF, ELSS Mutual Funds, LIC Premium, NSC, 5yr FD, EPF, SSY, home loan principal', 'Section 80D — Health insurance premium up to 25,000 (50,000 for seniors)', 'Section 24(b) — Home loan interest up to 2,00,000', 'Section 80TTA — Savings interest up to 10,000', 'NPS (80CCD) — Additional 50,000 over 80C limit', 'New Tax Regime: Lower slab rates but most deductions not available — calculate both to decide']
+            },
+            capital: {
+                keywords: ['capital gains', 'shares', 'mutual fund', 'property', 'ltcg', 'stcg', 'sale of property', 'equity'],
+                title: 'Capital Gains Tax Guide',
+                steps: ['Equity Shares and Equity MF: STCG (held under 1yr) — 20% | LTCG (held over 1yr) — 12.5% above 1.25L', 'Debt Mutual Funds — Taxed at slab rate (no indexation after Apr 2023)', 'Property STCG (held under 2yr) — slab rate | LTCG (held over 2yr) — 12.5% without indexation', 'Save LTCG — Invest in 54EC bonds (NHAI/REC) within 6 months of property sale', 'File ITR-2 if you have any capital gains']
+            },
+            nri: {
+                keywords: ['nri', 'non resident', 'foreign', 'remittance', 'dtaa', 'fema', '180 days', 'abroad'],
+                title: 'NRI Taxation in India',
+                steps: ['Residential Status — NRI if under 182 days in India in FY', 'Taxable in India — Income earned or received in India (rent, capital gains, dividends)', 'TDS on NRI income — Higher TDS applies (30%+ on most income)', 'DTAA Benefits — Check Double Tax Avoidance Agreement with your country', 'NRE vs NRO Account — NRE income is tax-free | NRO income is taxable', 'File ITR if Indian income exceeds 2.5L or to claim TDS refund', 'Use Form 10F + Tax Residency Certificate for DTAA benefit']
+            },
+            docs: {
+                keywords: ['documents', 'checklist', 'what documents', 'need for', 'required', 'upload', 'what do i need'],
+                title: 'Document Checklist for ITR',
+                steps: ['Always Required: PAN Card + Aadhaar, Form 16 (from employer), Bank statements (all accounts), Form 26AS and AIS', 'Investment proofs (80C) — PPF passbook, ELSS statement, LIC premium receipt', 'Home loan statement (principal + interest split)', 'House rent receipts (if claiming HRA)', 'Capital gains statement from broker', 'Health insurance premium receipts (80D)', 'Interest certificates for FD/Savings accounts']
+            }
+        };
+
+        function getTaxbotResponse(query) {
+            var q = query.toLowerCase();
+            var keys = Object.keys(TAXBOT_KB);
+            for (var i = 0; i < keys.length; i++) {
+                var kb = TAXBOT_KB[keys[i]];
+                if (kb.keywords.some(function (kw) { return q.indexOf(kw) !== -1; })) {
+                    return '<strong>📋 ' + kb.title + '</strong><br><br>' + kb.steps.map(function (s, idx) { return '<span style="display:block;margin-bottom:6px;padding:6px 10px;background:rgba(255,255,255,.04);border-radius:8px;border-left:2px solid var(--blue)">' + s + '</span>'; }).join('');
+                }
+            }
+            if (q.indexOf('deadline') !== -1 || q.indexOf('due date') !== -1 || q.indexOf('last date') !== -1) {
+                return '<strong>⏰ Key Tax Deadlines FY 2024-25</strong><br><br><span style="display:block;margin-bottom:5px">📌 ITR Filing — <strong>July 31, 2025</strong></span><span style="display:block;margin-bottom:5px">📌 GSTR-3B Monthly — <strong>20th every month</strong></span><span style="display:block;margin-bottom:5px">📌 Advance Tax Q2 — <strong>Sept 15, 2025</strong></span><span style="display:block;margin-bottom:5px">📌 TDS Return Q2 — <strong>Oct 31, 2025</strong></span><span style="display:block;margin-bottom:5px">📌 Advance Tax Q3 — <strong>Dec 15, 2025</strong></span><span style="display:block;margin-bottom:5px">📌 GSTR-9 Annual — <strong>Dec 31, 2025</strong></span>';
+            }
+            return 'I can help you with:<br><br><span style="display:block;margin-bottom:5px;cursor:pointer;color:var(--blue-l)" onclick="quickAsk(\'Steps for ITR filing\')">📊 ITR Filing steps and deadlines</span><span style="display:block;margin-bottom:5px;cursor:pointer;color:var(--blue-l)" onclick="quickAsk(\'GST compliance steps\')">🧾 GST returns and ITC</span><span style="display:block;margin-bottom:5px;cursor:pointer;color:var(--blue-l)" onclick="quickAsk(\'TDS requirements\')">💼 TDS deduction rates</span><span style="display:block;margin-bottom:5px;cursor:pointer;color:var(--blue-l)" onclick="quickAsk(\'Tax saving 80C deductions\')">💰 Tax saving — 80C, 80D, NPS</span><span style="display:block;margin-bottom:5px;cursor:pointer;color:var(--blue-l)" onclick="quickAsk(\'Capital gains tax on shares\')">📈 Capital gains tax</span><span style="display:block;margin-bottom:5px;cursor:pointer;color:var(--blue-l)" onclick="quickAsk(\'Business registration Pvt Ltd\')">🏢 Business registration</span><span style="display:block;margin-bottom:5px;cursor:pointer;color:var(--blue-l)" onclick="quickAsk(\'NRI taxation India\')">🌏 NRI taxation</span><br>Just ask e.g. <em>"Steps for ITR filing"</em> or <em>"GST deadlines"</em>';
+        }
+
+        function appendTaxbotMsg(text, role) {
+            var msgs = el("taxbot-msgs"), now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            var d = document.createElement("div"); d.className = "cmsg cmsg-" + role;
+            d.innerHTML = '<div class="cbubble">' + text + '</div><div class="ctime">' + now + '</div>';
+            msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+        }
+
+        // STUBS — overridden by Firebase module once loaded
+        window.doLogin = function () { toast("Connecting to server... try again in a moment", "info"); };
+        window.doSignup = function () { toast("Connecting to server... try again in a moment", "info"); };
+        window.doLogout = function () {
+            window._isDemoMode = false;
+            window.currentUser = null; window.currentProfile = null;
+            try { applySession(); } catch (e) { }
+            showPage('home');
+            closeUserMenu();
+            toast('Logged out successfully', 'info');
+        };
+        window.goMarket = function () { showPage("market"); };
+        window.goClientDash = function () { showPage("client-dash"); };
+        window.goCADash = function () { showPage("ca-dash"); };
+        window.loadMarketplace = function () { showPage("market"); };
+        window.bookCA = function () { openAuth("login"); };
+        window.sendTaxbotMsg = function () {
+            var inp = el("taxbot-inp"), txt = inp.value.trim(); if (!txt) return;
+            inp.value = "";
+            appendTaxbotMsg(txt, "user");
+            var tid = "typing_" + Date.now(), msgs = el("taxbot-msgs");
+            var tp = document.createElement("div"); tp.className = "cmsg cmsg-ai"; tp.id = tid;
+            tp.innerHTML = '<div class="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div>';
+            msgs.appendChild(tp); msgs.scrollTop = msgs.scrollHeight;
+            setTimeout(function () {
+                var el2 = document.getElementById(tid); if (el2) el2.remove();
+                appendTaxbotMsg(getTaxbotResponse(txt), "ai");
+            }, 600 + Math.random() * 400);
+        };
+        window.quickAsk = function (q) { el("taxbot-inp").value = q; window.sendTaxbotMsg(); };
+        window.chatKeydown = function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); window.sendTaxbotMsg(); } };
+        window.taxbotKeydown = function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); window.sendTaxbotMsg(); } };
+        window.filterMarketplace = function () { };
+        window.openCAProfile = function () { };
+        window.updateBookingStatus = function () { };
+        window.openChat = function () { };
+        window.sendChatMsg = function () { };
+        window.handleFileUpload = function () { };
+        window.viewDocAnalysis = function () { };
+        window.viewClientDocs = function () { };
+        window.openEditProfile = function () { };
+        window.saveCAProfile = function () { };
+        window.goDashFromMenu = function () {
+            if (window._isDemoMode) { if (window.currentProfile && window.currentProfile.role === 'ca') showPage('ca-dash'); else showPage('client-dash'); return; }
+            showPage("home");
+        };
+        window.markNotifRead = function () { };
+    </script>
+    <script type="module">
+        const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+        const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+        const { getFirestore, doc, setDoc, getDoc, collection, addDoc, query, where, getDocs, onSnapshot, updateDoc, serverTimestamp, orderBy } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+        const { getStorage, ref, uploadBytes, getDownloadURL } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js");
+
+        // ─── aliases to global UI functions ───
+        const el = (id) => document.getElementById(id);
+        const v = (id) => (el(id)?.value || "").trim();
+        const toast = (msg, type) => window.toast(msg, type);
+        const openModal = (id) => window.openModal(id);
+        const closeModal = (id) => window.closeModal(id);
+        const showPage = (id) => window.showPage(id);
+
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA5aQw8SvGUGbnZIWQPRzscCWqLQ2jNNNE",
+            authDomain: "ledgerx-47da3.firebaseapp.com",
+            projectId: "ledgerx-47da3",
+            storageBucket: "ledgerx-47da3.firebasestorage.app",
+            messagingSenderId: "351630777147",
+            appId: "1:351630777147:web:166abae2a925450db2f51e"
+        };
+
+        // OCR.space — get free key at https://ocr.space/ocrapi ("helloworld" = free tier, 25k req/month)
+        const OCR_API_KEY = "helloworld";
+        // Claude is proxied through Firebase Functions — API key is stored server-side only
+        const CLAUDE_FN_URL = "https://us-central1-ledgerx-47da3.cloudfunctions.net/askClaude";
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const stor = getStorage(app);
+
+        let currentUser = null;
+        let currentProfile = null;
+        let unsubscribeListeners = [];
+        let notifUnsub = null;
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user;
+                window.currentUser = user;
+                const snap = await getDoc(doc(db, "users", user.uid));
+                if (snap.exists()) {
+                    currentProfile = snap.data();
+                    window.currentProfile = currentProfile;
+                    applySession();
+                    loadNotifications();
+                    setCAOnline();
+                    // Only redirect if currently on home/auth page
+                    const activePage = document.querySelector(".page.active");
+                    const activeId = activePage ? activePage.id : "";
+                    if (!activeId || activeId === "page-home") {
+                        if (currentProfile.role === "ca") goCADash();
+                        else goClientDash();
+                    }
+                }
+            } else {
+                currentUser = null; currentProfile = null;
+                window.currentUser = null; window.currentProfile = null;
+                if (notifUnsub) { notifUnsub(); notifUnsub = null; }
+                unsubscribeListeners.forEach(u => u());
+                unsubscribeListeners = [];
+                applySession();
+                showPage("home");
+            }
+        });
+
+        window.doSignup = async function () {
+            const first = v("su-first"), last = v("su-last"), email = v("su-email"), pass = v("su-pass"), role = v("su-role"), phone = v("su-phone"), city = v("su-city");
+            const caNum = role === "ca" ? v("su-canum") : "", exp = role === "ca" ? v("su-exp") : "";
+            const specs = role === "ca" ? Array.from(document.querySelectorAll(".spec-check:checked")).map(c => c.value) : [];
+            const fee = role === "ca" ? v("su-fee") : "", bio = role === "ca" ? v("su-bio") : "";
+            if (!first || !last || !email || !pass || !phone || !city) { showAuthErr("All fields are required."); return; }
+            if (pass.length < 6) { showAuthErr("Password must be at least 6 characters."); return; }
+            if (role === "ca" && !caNum) { showAuthErr("CA Membership number is required."); return; }
+            setBtnLoading("su-btn", true);
+            try {
+                const cred = await createUserWithEmailAndPassword(auth, email, pass);
+                const uid = cred.user.uid;
+                const profile = {
+                    uid, first, last, email, phone, city, role, displayName: first + " " + last, createdAt: serverTimestamp(),
+                    ...(role === "ca" ? { caNum, exp: Number(exp), specs, fee: Number(fee), bio, rating: 0, reviewCount: 0, verified: false, clientCount: 0 } : { filings: [], riskScore: null })
+                };
+                await setDoc(doc(db, "users", uid), profile);
+                if (role === "ca") await setDoc(doc(db, "cas", uid), { ...profile, online: true });
+                showAuthMsg("Account created! Welcome to LedgerX.");
+            } catch (e) { showAuthErr(e.message.replace("Firebase:", "").replace(/\(.*\)/, "")); setBtnLoading("su-btn", false); }
+        };
+
+        window.doLogin = async function () {
+            const email = v("li-email"), pass = v("li-pass");
+            if (!email || !pass) { showAuthErr("Enter your email and password."); return; }
+            setBtnLoading("li-btn", true);
+            try { await signInWithEmailAndPassword(auth, email, pass); closeAuth(); }
+            catch (e) { showAuthErr("Invalid email or password."); setBtnLoading("li-btn", false); }
+        };
+
+        window.doLogout = async function () {
+            try {
+                setCAOffline();
+                unsubscribeListeners.forEach(u => u());
+                unsubscribeListeners = [];
+                clearInterval(window._dlTimer);
+                if (notifUnsub) { notifUnsub(); notifUnsub = null; }
+                await signOut(auth);
+                closeUserMenu();
+                toast("Logged out successfully", "info");
+            } catch (e) { toast("Logout failed: " + e.message, "error"); }
+        };
+
+        function applySession() {
+            const loggedIn = !!currentUser;
+            el("nav-loggedout").style.display = loggedIn ? "none" : "flex";
+            el("nav-loggedin").style.display = loggedIn ? "flex" : "none";
+            if (loggedIn && currentProfile) {
+                const init = (currentProfile.first[0] + (currentProfile.last?.[0] || "")).toUpperCase();
+                el("nav-av").textContent = init;
+                el("nav-name").textContent = currentProfile.displayName;
+                el("nav-role").textContent = currentProfile.role === "ca" ? "Chartered Accountant" : "Client";
+                el("menu-name").textContent = currentProfile.displayName;
+                el("menu-email").textContent = currentProfile.email;
+                el("nav-dash-link").style.display = currentProfile.role === "client" ? "" : "none";
+                el("nav-cadash-link").style.display = currentProfile.role === "ca" ? "" : "none";
+                const md = el("menu-dash"); if (md) md.textContent = currentProfile.role === "ca" ? "📊 CA Portal" : "🏠 Dashboard";
+            }
+        }
+
+        window.loadMarketplace = async function () {
+            showPage("market");
+            el("ca-grid").innerHTML = loadingSpinner("Loading verified CAs...");
+            try {
+                const snap = await getDocs(collection(db, "cas"));
+                const cas = []; snap.forEach(d => cas.push({ id: d.id, ...d.data() }));
+                renderCACards(cas);
+            } catch (e) { el("ca-grid").innerHTML = emptyState("🔍", "Could not load CAs", "Check your Firebase config."); }
+        };
+
+        window.filterMarketplace = async function () {
+            const q = v("mkt-search").toLowerCase(), spec = v("mkt-spec"), city = v("mkt-city").toLowerCase();
+            el("ca-grid").innerHTML = loadingSpinner("Filtering...");
+            try {
+                const snap = await getDocs(collection(db, "cas")); let cas = [];
+                snap.forEach(d => cas.push({ id: d.id, ...d.data() }));
+                if (q) cas = cas.filter(c => (c.displayName || "").toLowerCase().includes(q) || (c.specs || []).some(s => s.toLowerCase().includes(q)));
+                if (spec) cas = cas.filter(c => (c.specs || []).includes(spec));
+                if (city) cas = cas.filter(c => (c.city || "").toLowerCase().includes(city));
+                cas = cas.map(c => ({ ...c, smartScore: calcSmartScore(c) })).sort((a, b) => b.smartScore - a.smartScore);
+                renderCACards(cas);
+            } catch (e) { el("ca-grid").innerHTML = emptyState("⚠️", "Error", "" + e.message); }
+        };
+
+        function calcSmartScore(ca) {
+            const spec = Math.min((ca.specs || []).length * 20, 100), rat = (ca.rating || 0) * 20, exp = Math.min((ca.exp || 0) * 5, 100), fee = ca.fee ? Math.max(0, 100 - (ca.fee / 200)) : 50;
+            return Math.round(0.35 * spec + 0.25 * rat + 0.25 * exp + 0.15 * fee);
+        }
+
+        function renderCACards(cas) {
+            if (!cas.length) { el("ca-grid").innerHTML = emptyState("🔍", "No CAs found", "Try different filters."); return; }
+            const colors = ["av-b", "av-c", "av-g", "av-p", "av-o", "av-i"];
+            el("ca-grid").innerHTML = cas.map((ca, i) => {
+                const init = ((ca.first || "?")[0] + (ca.last || "")[0] || "").toUpperCase();
+                const score = ca.smartScore || calcSmartScore(ca);
+                const stars = "★".repeat(Math.round(ca.rating || 0)) + "☆".repeat(5 - Math.round(ca.rating || 0));
+                const tags = (ca.specs || []).slice(0, 3).map(s => `<span class="ctag">${s}</span>`).join("");
+                const onlineDot = ca.online ? `<span class="online-dot"><span class="dot-pulse"></span>Online</span>` : "";
+                return `<div class="ca-card fade-in" onclick="openCAProfile('${ca.uid || ca.id}')">
+      <div class="ca-head">
+        <div class="ca-av ${colors[i % colors.length]}">${init}</div>
+        <div class="ca-meta">
+          <h4>${ca.displayName || "CA"}<span class="verified">✓</span>${onlineDot}</h4>
+          <div class="ca-sub">${ca.exp || 0} yrs · ${ca.city || "India"}</div>
+          <div class="ca-stars">${stars} <span style="color:var(--t3)">(${ca.reviewCount || 0})</span></div>
+        </div>
+      </div>
+      <div class="ca-tags">${tags}</div>
+      <div class="score-wrap">
+        <div class="score-bg"><div class="score-fill" style="width:${score}%"></div></div>
+        <div class="score-labels"><span>AI Smart Score</span><span>${score}/100</span></div>
+      </div>
+      <div class="ca-foot">
+        <div class="ca-price">₹${(ca.fee || 0).toLocaleString()}<small>/filing</small></div>
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();bookCA('${ca.uid || ca.id}','${ca.displayName || "CA"}')">Book Now</button>
+      </div>
+    </div>`;
+            }).join("");
+            setTimeout(() => document.querySelectorAll(".fade-in").forEach(e => e.classList.add("show")), 50);
+        }
+
+        window.openCAProfile = async function (caId) {
+            try {
+                const snap = await getDoc(doc(db, "cas", caId)); if (!snap.exists()) return;
+                const ca = snap.data();
+                const init = ((ca.first || "?")[0] + (ca.last || "")[0] || "").toUpperCase();
+                const stars = "★".repeat(Math.round(ca.rating || 0)) + "☆".repeat(5 - Math.round(ca.rating || 0));
+                el("ca-profile-content").innerHTML = `
+      <div style="display:flex;gap:18px;align-items:flex-start;margin-bottom:24px">
+        <div class="ca-av av-b" style="width:64px;height:64px;font-size:1.4rem;flex-shrink:0">${init}</div>
+        <div>
+          <h2 style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800">${ca.displayName}</h2>
+          <div style="color:var(--t2);margin:4px 0">${ca.exp || 0} yrs experience · ${ca.city}</div>
+          <div style="color:var(--gold)">${stars} <span style="color:var(--t3)">(${ca.reviewCount || 0} reviews)</span></div>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${(ca.specs || []).map(s => `<span class="ctag">${s}</span>`).join("")}</div>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info-row"><span>CA Number</span><span>${ca.caNum || "—"}</span></div>
+        <div class="info-row"><span>City</span><span>${ca.city}</span></div>
+        <div class="info-row"><span>Phone</span><span>${ca.phone || "—"}</span></div>
+        <div class="info-row"><span>Fee</span><span>₹${(ca.fee || 0).toLocaleString()}/filing</span></div>
+      </div>
+      ${ca.bio ? `<div style="margin-top:18px;padding:18px;background:var(--s2);border-radius:12px;font-size:.88rem;color:var(--t2);line-height:1.7">${ca.bio}</div>` : ""}
+      <div style="margin-top:20px;display:flex;gap:12px">
+        <button class="btn btn-primary btn-md" onclick="bookCA('${ca.uid || ca.id}','${ca.displayName}');closeModal('ca-profile-modal')">Book This CA</button>
+        <button class="btn btn-ghost btn-md" onclick="closeModal('ca-profile-modal')">Close</button>
+      </div>`;
+                openModal("ca-profile-modal");
+            } catch (e) { toast("Could not load CA profile.", "error"); }
+        };
+
+        window.bookCA = async function (caId, caName) {
+            if (!currentUser) { openAuth("login"); return; }
+            if (currentProfile?.role === "ca") { toast("CAs cannot book other CAs.", "error"); return; }
+            try {
+                const existing = await getDocs(query(collection(db, "bookings"), where("clientId", "==", currentUser.uid), where("caId", "==", caId)));
+                if (!existing.empty) { toast("You already have a booking with " + caName, "info"); closeModal("ca-profile-modal"); goClientDash(); return; }
+                await addDoc(collection(db, "bookings"), { clientId: currentUser.uid, clientName: currentProfile.displayName, clientEmail: currentProfile.email, caId, caName, status: "pending", createdAt: serverTimestamp(), messages: [] });
+                await updateDoc(doc(db, "cas", caId), { clientCount: (currentProfile.clientCount || 0) + 1 });
+                toast("Booking request sent to " + caName + "! ✓", "success");
+                closeModal("ca-profile-modal"); goClientDash();
+            } catch (e) { toast("Booking failed: " + e.message, "error"); }
+        };
+
+        window.goClientDash = async function () {
+            if (!currentUser) { openAuth("login"); return; }
+            showPage("client-dash"); loadClientDash();
+        };
+
+        async function loadClientDash() {
+            const p = currentProfile;
+            el("cd-greeting").textContent = greetTime(p.first);
+            el("cd-sub").textContent = "FY 2024-25 · " + p.email;
+            const bSnap = await getDocs(query(collection(db, "bookings"), where("clientId", "==", currentUser.uid)));
+            const bookings = []; bSnap.forEach(d => bookings.push({ id: d.id, ...d.data() }));
+            renderClientBookings(bookings); el("cd-w-bookings").textContent = bookings.length;
+            const dSnap = await getDocs(query(collection(db, "documents"), where("ownerId", "==", currentUser.uid)));
+            const docs = []; dSnap.forEach(d => docs.push({ id: d.id, ...d.data() }));
+            renderClientDocs(docs); el("cd-w-docs").textContent = docs.length;
+            if (p.riskScore !== null && p.riskScore !== undefined) { el("cd-w-risk").textContent = p.riskScore + "/100"; el("cd-risk-num").textContent = p.riskScore + "/100"; el("cd-risk-thumb").style.left = p.riskScore + "%"; }
+            if (docs.length > 0) renderClientRevenueChart(docs);
+            const mSnap = query(collection(db, "messages"), where("toId", "==", currentUser.uid), where("read", "==", false));
+            const unsub = onSnapshot(mSnap, s => { const c = s.size; el("cd-msg-badge").textContent = c; el("cd-msg-badge").style.display = c ? "" : "none"; });
+            unsubscribeListeners.push(unsub);
+            updateDeadlineCountdowns(); clearInterval(window._dlTimer);
+            window._dlTimer = setInterval(updateDeadlineCountdowns, 60000);
+        }
+
+        function renderClientBookings(bookings) {
+            const wrap = el("cd-bookings");
+            if (!bookings.length) { wrap.innerHTML = emptyState("👤", "No CA booked yet", '<button class="btn btn-primary btn-sm" onclick="loadMarketplace()" style="margin-top:12px">Find a CA</button>'); return; }
+            const statusColors = { pending: "var(--gold)", active: "var(--green)", completed: "var(--blue-l)", rejected: "var(--red)" };
+            const statusIcons = { pending: "⏳", active: "✅", completed: "🏁", rejected: "❌" };
+            wrap.innerHTML = bookings.map(b => {
+                const sc = statusColors[b.status] || "var(--t2)", si = statusIcons[b.status] || "📋";
+                return `<div class="prog-item">
+      <div class="prog-dot pd-b">👤</div>
+      <div class="prog-info"><div class="prog-name">${b.caName}</div>
+        <div style="font-size:.75rem;margin-top:3px"><span style="color:${sc};font-weight:600">${si} ${b.status.charAt(0).toUpperCase() + b.status.slice(1)}</span><span style="color:var(--t3)"> · ${fmtDate(b.createdAt)}</span></div>
+      </div>
+      ${b.status !== "rejected" ? `<button class="btn btn-ghost btn-sm" onclick="openChat('${b.id}','${b.caId}','${b.caName}')">Message</button>` : ""}
+    </div>`;
+            }).join("");
+        }
+
+        function renderClientDocs(docs) {
+            const wrap = el("cd-docs");
+            if (!docs.length) { wrap.innerHTML = `<div style="text-align:center;padding:20px;color:var(--t3);font-size:.85rem">No documents yet. Upload below.</div>`; return; }
+            wrap.innerHTML = docs.map(d => `<div class="doc-row"><span class="dic">📄</span><span class="dname">${d.fileName}</span><span class="dsize">${d.fileSize || ""}</span><span class="dstat ${d.analyzed ? 'dv' : 'da'}">${d.analyzed ? "✓ Analyzed" : "⏳ Pending"}</span>${d.analyzed ? `<button class="btn btn-ghost btn-sm" onclick="viewDocAnalysis('${d.id}')">View</button>` : ""}</div>`).join("");
+        }
+
+        function renderClientRevenueChart(docs) {
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const buckets = new Array(12).fill(0);
+            docs.forEach(d => { if (d.createdAt?.toDate) { const m = d.createdAt.toDate().getMonth(); buckets[m]++; } });
+            const nonZero = buckets.filter(v => v > 0); if (!nonZero.length) return;
+            const cur = new Date().getMonth();
+            renderLineChart("cd-chart-wrap", months.slice(0, cur + 1), buckets.slice(0, cur + 1), "", "#3b82f6", "#06b6d4");
+            el("cd-rev-total").textContent = docs.length + " docs";
+            el("cd-rev-change").textContent = "↑ Total documents uploaded";
+            el("cd-rev-change").style.color = "var(--green)";
+        }
+
+        window.viewDocAnalysis = async function (docId) {
+            const snap = await getDoc(doc(db, "documents", docId)); if (!snap.exists()) return;
+            const d = snap.data();
+            el("analysis-content").innerHTML = `
+    <h3 style="font-family:'Syne',sans-serif;margin-bottom:14px">📄 ${d.fileName}</h3>
+    <div style="background:var(--s2);border-radius:12px;padding:18px;font-size:.88rem;line-height:1.8;white-space:pre-wrap;color:var(--t2)">${d.aiAnalysis || "No analysis available."}</div>
+    <div style="margin-top:12px;padding:12px;background:rgba(37,99,235,.06);border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--t3)">OCR Text:<br>${(d.ocrText || "").slice(0, 400)}...</div>
+    <button class="btn btn-ghost btn-md" onclick="closeModal('analysis-modal')" style="margin-top:16px">Close</button>`;
+            openModal("analysis-modal");
+        };
+
+        window.goCADash = async function () {
+            if (!currentUser) { openAuth("login"); return; }
+            showPage("ca-dash"); loadCADash();
+        };
+
+        async function loadCADash() {
+            const p = currentProfile;
+            el("cad-greeting").textContent = greetTime("CA " + p.first);
+            el("cad-sub").textContent = p.caNum ? "CA No: " + p.caNum + " · " + p.city : p.city;
+            const bSnap = await getDocs(query(collection(db, "bookings"), where("caId", "==", currentUser.uid)));
+            const bookings = []; bSnap.forEach(d => bookings.push({ id: d.id, ...d.data() }));
+            renderCAClients(bookings); el("cad-w-clients").textContent = bookings.length;
+            el("cad-w-rating").textContent = p.rating ? p.rating.toFixed(1) : "—";
+            el("cad-w-reviews").textContent = p.reviewCount || 0;
+            el("cad-w-exp").textContent = (p.exp || 0) + " yrs";
+            if (bookings.length) renderCARevenueChart(bookings, p.fee || 0);
+            const unsub = onSnapshot(query(collection(db, "bookings"), where("caId", "==", currentUser.uid), where("status", "==", "pending")),
+                s => { const c = s.size; el("cad-pending-badge").textContent = c; el("cad-pending-badge").style.display = c ? "" : "none"; });
+            unsubscribeListeners.push(unsub);
+            loadCAClientDocs(bookings);
+        }
+
+        function renderCAClients(bookings) {
+            const wrap = el("cad-clients");
+            if (!bookings.length) { wrap.innerHTML = emptyState("👥", "No clients yet", "Clients who book you appear here."); return; }
+            const statusColor = { pending: "s-pend", active: "s-on", completed: "s-done", rejected: "" };
+            wrap.innerHTML = `<div class="ct-head"><span>Client</span><span>Status</span><span>Booked On</span><span>Actions</span></div>
+    ${bookings.map(b => {
+                const sc = statusColor[b.status] || "s-on";
+                const ss = b.status === "rejected" ? "background:var(--red-d);color:var(--red)" : "";
+                return `<div class="ct-row">
+        <div class="ct-name"><div class="ct-av av-b">${(b.clientName || "?")[0].toUpperCase()}</div>${b.clientName}</div>
+        <span class="prog-status ${sc}" style="${ss}">${b.status}</span>
+        <span style="color:var(--t3);font-size:.82rem">${fmtDate(b.createdAt)}</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="openChat('${b.id}','${b.clientId}','${b.clientName}')">Message</button>
+          <button class="btn btn-ghost btn-sm" onclick="viewClientDocs('${b.clientId}','${b.clientName}')">Docs</button>
+          ${b.status === "pending" ? `<button class="btn btn-sm" style="background:var(--green-d);color:var(--green);border:1px solid rgba(16,185,129,.3)" onclick="updateBookingStatus('${b.id}','active','${b.clientName}')">✓ Accept</button><button class="btn btn-sm" style="background:var(--red-d);color:var(--red);border:1px solid rgba(239,68,68,.3)" onclick="updateBookingStatus('${b.id}','rejected','${b.clientName}')">✕ Decline</button>` : ""}
+          ${b.status === "active" ? `<button class="btn btn-sm" style="background:var(--green-d);color:var(--green);border:1px solid rgba(16,185,129,.3)" onclick="updateBookingStatus('${b.id}','completed','${b.clientName}')">✓ Complete</button>` : ""}
+        </div>
+      </div>`;
+            }).join("")}`;
+        }
+
+        async function loadCAClientDocs(bookings) {
+            const wrap = el("cad-docs");
+            if (!bookings.length) { wrap.innerHTML = emptyState("📂", "No client documents", "Documents uploaded by your clients appear here."); return; }
+            try {
+                const clientIds = bookings.map(b => b.clientId);
+                wrap.innerHTML = loadingSpinner("Loading client documents...");
+                let allDocs = [];
+                for (const cid of clientIds) { const snap = await getDocs(query(collection(db, "documents"), where("ownerId", "==", cid))); snap.forEach(d => allDocs.push({ id: d.id, ...d.data() })); }
+                if (!allDocs.length) { wrap.innerHTML = emptyState("📂", "No documents yet", "Clients haven't uploaded any documents yet."); return; }
+                wrap.innerHTML = allDocs.map(d => `<div class="doc-row"><span class="dic">📄</span><span class="dname">${d.fileName}</span><span style="font-size:.73rem;color:var(--t3)">by ${d.ownerName || "Client"}</span><span class="dstat ${d.analyzed ? 'dv' : 'da'}">${d.analyzed ? "✓ Analyzed" : "⏳ Pending"}</span>${d.analyzed ? `<button class="btn btn-ghost btn-sm" onclick="viewDocAnalysis('${d.id}')">View Analysis</button>` : ""}</div>`).join("");
+            } catch (e) { wrap.innerHTML = emptyState("⚠️", "Error", "" + e.message); }
+        }
+
+        window.viewClientDocs = async function (clientId, clientName) {
+            try {
+                const snap = await getDocs(query(collection(db, "documents"), where("ownerId", "==", clientId)));
+                const docs = []; snap.forEach(d => docs.push({ id: d.id, ...d.data() }));
+                el("client-docs-content").innerHTML = `
+      <h3 style="font-family:'Syne',sans-serif;margin-bottom:16px">📂 Documents by ${clientName}</h3>
+      ${!docs.length ? emptyState("📄", "No documents", "This client hasn't uploaded any documents yet.") :
+                        docs.map(d => `<div class="doc-row" style="margin-bottom:8px"><span class="dic">📄</span><span class="dname">${d.fileName}</span><span class="dstat ${d.analyzed ? 'dv' : 'da'}">${d.analyzed ? "✓ Analyzed" : "⏳ Not analyzed"}</span>${d.analyzed ? `<button class="btn btn-ghost btn-sm" onclick="viewDocAnalysis('${d.id}')">View</button>` : ""}${d.fileURL ? `<a href="${d.fileURL}" target="_blank" class="btn btn-ghost btn-sm">Download</a>` : ""}</div>`).join("")}
+      <button class="btn btn-ghost btn-md" onclick="closeModal('client-docs-modal')" style="margin-top:16px">Close</button>`;
+                openModal("client-docs-modal");
+            } catch (e) { toast("Could not load docs: " + e.message, "error"); }
+        };
+
+        function renderCARevenueChart(bookings, fee) {
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const buckets = new Array(12).fill(0);
+            bookings.forEach(b => { if (b.createdAt?.toDate) buckets[b.createdAt.toDate().getMonth()] += fee; });
+            const cur = new Date().getMonth();
+            renderLineChart("cad-chart-wrap", months.slice(0, cur + 1), buckets.slice(0, cur + 1), "₹", "#f59e0b", "#f97316");
+            const total = buckets.reduce((a, b) => a + b, 0);
+            el("cad-rev-total").textContent = "₹" + total.toLocaleString();
+            el("cad-rev-change").textContent = bookings.length + " bookings total";
+            el("cad-rev-change").style.color = "var(--green)";
+        }
+
+        let currentChatBookingId = null, currentChatPartnerId = null, currentChatPartnerName = null;
+
+        window.openChat = function (bookingId, partnerId, partnerName) {
+            currentChatBookingId = bookingId; currentChatPartnerId = partnerId; currentChatPartnerName = partnerName;
+            el("chat-partner-name").textContent = partnerName;
+            el("chat-msgs-wrap").innerHTML = loadingSpinner("Loading messages...");
+            openModal("chat-modal");
+            const q = query(collection(db, "messages"), where("bookingId", "==", bookingId), orderBy("createdAt", "asc"));
+            const unsub = onSnapshot(q, snap => {
+                const msgs = []; snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+                renderChatMsgs(msgs);
+                msgs.filter(m => m.toId === currentUser.uid && !m.read).forEach(m => updateDoc(doc(db, "messages", m.id), { read: true }));
+            });
+            unsubscribeListeners.push(unsub);
+        };
+
+        function renderChatMsgs(msgs) {
+            const wrap = el("chat-msgs-wrap");
+            if (!msgs.length) { wrap.innerHTML = `<div style="text-align:center;padding:30px;color:var(--t3);font-size:.85rem">No messages yet. Say hello! 👋</div>`; return; }
+            wrap.innerHTML = msgs.map(m => { const mine = m.fromId === currentUser.uid; return `<div class="cmsg ${mine ? 'cmsg-user' : 'cmsg-ai'}"><div class="cbubble">${m.text}</div><div class="ctime">${fmtDate(m.createdAt)}</div></div>`; }).join("");
+            wrap.scrollTop = wrap.scrollHeight;
+        }
+
+        window.sendChatMsg = async function () {
+            const txt = v("chat-inp"); if (!txt || !currentChatBookingId) return;
+            el("chat-inp").value = "";
+            try {
+                await addDoc(collection(db, "messages"), { bookingId: currentChatBookingId, fromId: currentUser.uid, fromName: currentProfile.displayName, toId: currentChatPartnerId, text: txt, read: false, createdAt: serverTimestamp() });
+            } catch (e) { toast("Failed to send: " + e.message, "error"); }
+        };
+
+        window.handleFileUpload = async function (input) {
+            const file = input.files[0]; if (!file) return;
+            if (!currentUser) { toast("Please log in first.", "error"); return; }
+            if (file.size > 5 * 1024 * 1024) { toast("File too large. Max 5MB.", "error"); return; }
+            const uploadBtn = el("upload-status");
+            uploadBtn.textContent = "⏳ Uploading..."; uploadBtn.style.display = "block";
+            try {
+                const storRef = ref(stor, `docs/${currentUser.uid}/${Date.now()}_${file.name}`);
+                const snap = await uploadBytes(storRef, file);
+                const fileURL = await getDownloadURL(snap.ref);
+                uploadBtn.textContent = "🔍 Running OCR...";
+                let ocrText = "";
+                try {
+                    const fd = new FormData(); fd.append("file", file); fd.append("apikey", OCR_API_KEY); fd.append("language", "eng"); fd.append("isTable", "true"); fd.append("OCREngine", "2");
+                    const ocrRes = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: fd });
+                    const ocrData = await ocrRes.json();
+                    ocrText = ocrData?.ParsedResults?.[0]?.ParsedText || "";
+                } catch (ocrErr) { ocrText = "[OCR failed: " + ocrErr.message + "]"; }
+                uploadBtn.textContent = "🤖 AI Analyzing...";
+                let aiAnalysis = "";
+                try {
+                    const claudeRes = await fetch(CLAUDE_FN_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 1000, system: `You are an expert Indian CA document analyzer. Analyze extracted OCR text from a financial document and provide:\n1. Document Type\n2. Key Extracted Info (PAN, dates, amounts, names, GSTIN)\n3. Completeness Check\n4. Tax Relevance\n5. Any anomalies or flags\nBe concise and structured. Use bullet points.`, messages: [{ role: "user", content: `Analyze this document text:\n\n${ocrText.slice(0, 3000)}` }] }) });
+                    const cd = await claudeRes.json(); aiAnalysis = cd.content?.[0]?.text || "Analysis unavailable.";
+                } catch (cErr) { aiAnalysis = "[AI analysis failed: " + cErr.message + "]"; }
+                const docRef = await addDoc(collection(db, "documents"), { ownerId: currentUser.uid, ownerName: currentProfile.displayName, fileName: file.name, fileSize: formatBytes(file.size), fileURL, ocrText, aiAnalysis, analyzed: true, createdAt: serverTimestamp() });
+                updateRiskScore(ocrText, aiAnalysis);
+                uploadBtn.textContent = "✅ Analysis complete!";
+                setTimeout(() => { uploadBtn.style.display = "none"; }, 2500);
+                toast("Document analyzed successfully! ✓", "success");
+                loadClientDash();
+            } catch (e) { uploadBtn.style.display = "none"; toast("Upload failed: " + e.message, "error"); }
+        };
+
+        async function updateRiskScore(ocrText, aiAnalysis) {
+            try {
+                const res = await fetch(CLAUDE_FN_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 150, system: 'You are a tax fraud detection AI. Output ONLY valid JSON: {"score": <0-100>, "level": "Low|Medium|High", "reason": "<one line>"}', messages: [{ role: "user", content: `Document analysis:\n${aiAnalysis}\n\nOCR text sample:\n${ocrText.slice(0, 500)}` }] }) });
+                const d = await res.json(); const txt = d.content?.[0]?.text || "{}";
+                const clean = txt.replace(/```json|```/g, "").trim();
+                const risk = JSON.parse(clean);
+                if (risk.score !== undefined) {
+                    await updateDoc(doc(db, "users", currentUser.uid), { riskScore: risk.score, riskLevel: risk.level, riskReason: risk.reason });
+                    el("cd-w-risk").textContent = risk.score + "/100"; el("cd-risk-num").textContent = risk.score + "/100";
+                    el("cd-risk-num").style.color = risk.score < 30 ? "var(--green)" : risk.score < 60 ? "var(--gold)" : "var(--red)";
+                    el("cd-risk-thumb").style.left = risk.score + "%"; el("cd-risk-reason").textContent = risk.reason || "";
+                }
+            } catch (e) { }
+        }
+
+        window.quickAsk = function (q) { el("taxbot-inp").value = q; sendTaxbotMsg(); };
+        window.sendTaxbotMsg = async function () {
+            const inp = el("taxbot-inp"), txt = inp.value.trim(); if (!txt) return;
+            inp.value = ""; appendTaxbotMsg(txt, "user");
+            const tid = "typing_" + Date.now(), msgs = el("taxbot-msgs");
+            const tp = document.createElement("div"); tp.className = "cmsg cmsg-ai"; tp.id = tid;
+            tp.innerHTML = '<div class="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div>';
+            msgs.appendChild(tp); msgs.scrollTop = msgs.scrollHeight;
+            // If API key is managed by backend, directly proxy to Firebase Functions
+            try {
+                const res = await fetch(CLAUDE_FN_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 800, system: `You are TaxBot, an expert AI tax assistant for LedgerX — India's CA marketplace. You specialize in ITR filing, GST compliance, TDS/TCS, advance tax, capital gains, NRI taxation, business registration, and FY 2024-25 compliance deadlines. Keep answers concise, accurate, and well-structured. Use numbered steps for procedures. Always be helpful and specific to Indian tax law.`, messages: [{ role: "user", content: txt }] }) });
+                const d = await res.json(); el(tid)?.remove();
+                appendTaxbotMsg(d.content?.[0]?.text || getTaxbotResponse(txt), "ai");
+            } catch (e) { el(tid)?.remove(); appendTaxbotMsg(getTaxbotResponse(txt), "ai"); }
+        };
+        function appendTaxbotMsg(text, role) {
+            const msgs = el("taxbot-msgs"), now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            const d = document.createElement("div"); d.className = "cmsg cmsg-" + role;
+            d.innerHTML = `<div class="cbubble">${text.replace(/\n/g, "<br>")}</div><div class="ctime">${now}</div>`;
+            msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+        }
+
+        window.openEditProfile = function () {
+            if (!currentProfile || currentProfile.role !== "ca") return;
+            const p = currentProfile;
+            el("ep-bio").value = p.bio || ""; el("ep-fee").value = p.fee || ""; el("ep-phone").value = p.phone || ""; el("ep-city").value = p.city || "";
+            document.querySelectorAll(".spec-edit-check").forEach(c => { c.checked = (p.specs || []).includes(c.value); });
+            openModal("edit-profile-modal");
+        };
+        window.saveCAProfile = async function () {
+            const bio = v("ep-bio"), fee = Number(v("ep-fee")), phone = v("ep-phone"), city = v("ep-city");
+            const specs = Array.from(document.querySelectorAll(".spec-edit-check:checked")).map(c => c.value);
+            try {
+                await updateDoc(doc(db, "users", currentUser.uid), { bio, fee, phone, city, specs });
+                await updateDoc(doc(db, "cas", currentUser.uid), { bio, fee, phone, city, specs });
+                currentProfile = { ...currentProfile, bio, fee, phone, city, specs };
+                toast("Profile updated! ✓", "success"); closeModal("edit-profile-modal"); loadCADash();
+            } catch (e) { toast("Update failed: " + e.message, "error"); }
+        };
+
+
+
+        function greetTime(name) { const h = new Date().getHours(); return (h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening") + ", " + name + " 👋"; }
+        function fmtDate(ts) { if (!ts) return "—"; try { const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }); } catch (e) { return "—"; } }
+        function formatBytes(b) { if (b < 1024) return b + "B"; if (b < 1048576) return (b / 1024).toFixed(0) + "KB"; return (b / 1048576).toFixed(1) + "MB"; }
+        function setBtnLoading(id, on) { const b = el(id); if (b) { b.disabled = on; b.textContent = on ? "Please wait..." : b.dataset.label || b.textContent; } }
+        function showAuthErr(msg) { const e = el("auth-err"); e.style.display = "block"; e.textContent = msg; }
+        function showAuthMsg(msg) { const e = el("auth-msg"); e.style.display = "block"; e.textContent = msg; el("auth-err").style.display = "none"; }
+        function loadingSpinner(txt) { return `<div style="text-align:center;padding:50px;color:var(--t3)"><div style="font-size:1.5rem;animation:spin 1s linear infinite;display:inline-block">⏳</div><div style="margin-top:10px;font-size:.85rem">${txt}</div></div>`; }
+        function emptyState(ic, h, p) { return `<div class="empty-state"><div class="empty-icon">${ic}</div><h3>${h}</h3><p>${p}</p></div>`; }
+
+        // Override placeholders with real Firebase functions
+        window.goMarket = function () { loadMarketplace(); };
+        window.goClientDash = function () { if (window._isDemoMode) { showPage("client-dash"); return; } goClientDash(); };
+        window.goCADash = function () { if (window._isDemoMode) { showPage("ca-dash"); return; } goCADash(); };
+        window.goDashFromMenu = function () {
+            if (window._isDemoMode) { if (currentProfile?.role === "ca") showPage("ca-dash"); else showPage("client-dash"); return; }
+            if (currentProfile?.role === "ca") goCADash(); else goClientDash();
+        };
+        window.chatKeydown = function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMsg(); } };
+        window.taxbotKeydown = function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTaxbotMsg(); } };
+
+
+        function renderLineChart(containerId, labels, values, prefix, c1, c2) {
+            const wrap = el(containerId); if (!wrap) return;
+            const W = wrap.offsetWidth || 700, H = 200, pad = { top: 20, right: 16, bottom: 30, left: 50 };
+            const cw = W - pad.left - pad.right, ch = H - pad.top - pad.bottom, max = Math.max(...values, 1), min = 0;
+            const xStep = labels.length > 1 ? cw / (labels.length - 1) : 0;
+            const pts = values.map((v, i) => ({ x: pad.left + i * xStep, y: pad.top + (1 - (v - min) / (max - min)) * ch }));
+            function smooth(pts) { return pts.map((p, i, a) => { if (i === 0) return `M${p.x.toFixed(1)},${p.y.toFixed(1)}`; const prev = a[i - 1], cpx = (prev.x + p.x) / 2; return `C${cpx.toFixed(1)},${prev.y.toFixed(1)} ${cpx.toFixed(1)},${p.y.toFixed(1)} ${p.x.toFixed(1)},${p.y.toFixed(1)}`; }).join(" "); }
+            const sd = smooth(pts), areaD = sd + ` L${pts[pts.length - 1].x},${pad.top + ch} L${pts[0].x},${pad.top + ch} Z`;
+            const uid = "ch" + Math.random().toString(36).slice(2, 7);
+            const yTicks = [0, 0.5, 1].map(f => ({ y: pad.top + ch * (1 - f), v: max * f }));
+            wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;overflow:visible">
+    <defs>
+      <linearGradient id="lg${uid}" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>
+      <linearGradient id="ag${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${c1}" stop-opacity="0.22"/><stop offset="100%" stop-color="${c1}" stop-opacity="0.01"/></linearGradient>
+    </defs>
+    ${yTicks.map(t => `<line x1="${pad.left}" y1="${t.y}" x2="${W - pad.right}" y2="${t.y}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/><text x="${pad.left - 8}" y="${t.y + 4}" text-anchor="end" fill="var(--t3)" font-size="11" font-family="DM Sans,sans-serif">${prefix}${t.v >= 1000 ? (t.v / 1000).toFixed(0) + "K" : t.v.toFixed(0)}</text>`).join("")}
+    ${labels.map((l, i) => `<text x="${pad.left + i * xStep}" y="${pad.top + ch + 20}" text-anchor="middle" fill="var(--t3)" font-size="11" font-family="DM Sans,sans-serif">${l}</text>`).join("")}
+    <path d="${areaD}" fill="url(#ag${uid})" style="animation:aFade 1s .3s both"/>
+    <path d="${sd}" fill="none" stroke="url(#lg${uid})" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2000" stroke-dashoffset="2000" style="animation:aDraw 1.5s .1s var(--slow) forwards"/>
+    ${pts.map((p, i) => `<circle cx="${p.x}" cy="${p.y}" r="0" fill="${c1}" stroke="var(--s1)" stroke-width="2" style="animation:aDot .4s ${.2 + i * .1}s var(--slow) forwards"><title>${prefix}${values[i]}</title></circle>`).join("")}
+  </svg>`;
+        }
+        window.renderLineChart = renderLineChart;
+
+        const kfStyle = document.createElement("style");
+        kfStyle.textContent = `@keyframes aDraw{to{stroke-dashoffset:0}}@keyframes aFade{from{opacity:0}to{opacity:1}}@keyframes aDot{to{r:5}}@keyframes spin{to{transform:rotate(360deg)}}`;
+        document.head.appendChild(kfStyle);
+
+        {
+            const sObs = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add("show"); }), { threshold: .1 });
+            document.querySelectorAll(".fade-in").forEach(e => sObs.observe(e));
+        }
+
+        {
+            const cObs = new IntersectionObserver(entries => entries.forEach(e => {
+                if (!e.isIntersecting) return;
+                const t = +e.target.dataset.target, sfx = e.target.dataset.sfx || "";
+                let c = 0; const step = t / 70;
+                const iv = setInterval(() => { c = Math.min(c + step, t); e.target.textContent = (t >= 1000 ? (c / 1000).toFixed(1) + "K+" : Math.floor(c)) + sfx; if (c >= t) clearInterval(iv); }, 22);
+                cObs.unobserve(e.target);
+            }), { threshold: .5 });
+            document.querySelectorAll("[data-target]").forEach(e => cObs.observe(e));
+        }
+
+        window.updateBookingStatus = async function (bookingId, newStatus, clientName) {
+            try {
+                await updateDoc(doc(db, "bookings", bookingId), { status: newStatus, updatedAt: serverTimestamp() });
+                const msgs = { active: `✅ Accepted booking from ${clientName}`, rejected: `Booking from ${clientName} declined.`, completed: `Booking with ${clientName} marked complete!` };
+                toast(msgs[newStatus] || "Status updated", "success");
+                const bSnap = await getDoc(doc(db, "bookings", bookingId));
+                if (bSnap.exists()) {
+                    const b = bSnap.data();
+                    const notifMsgs = { active: `Your booking with CA ${currentProfile.displayName} was accepted! 🎉`, rejected: `Your booking with CA ${currentProfile.displayName} was declined.`, completed: `Your filing with CA ${currentProfile.displayName} is complete! 🏁` };
+                    await addDoc(collection(db, "notifications"), { toId: b.clientId, fromName: currentProfile.displayName, message: notifMsgs[newStatus] || "Booking status updated.", read: false, createdAt: serverTimestamp() });
+                }
+                loadCADash();
+            } catch (e) { toast("Update failed: " + e.message, "error"); }
+        };
+
+        function loadNotifications() {
+            if (!currentUser) return; if (notifUnsub) notifUnsub();
+            const q = query(collection(db, "notifications"), where("toId", "==", currentUser.uid), orderBy("createdAt", "desc"));
+            notifUnsub = onSnapshot(q, snap => {
+                const notifs = []; snap.forEach(d => notifs.push({ id: d.id, ...d.data() }));
+                const unread = notifs.filter(n => !n.read).length;
+                const nc = el("notif-count"); nc.textContent = unread; nc.style.display = unread ? "" : "none";
+                const list = el("notif-list");
+                if (!notifs.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3);font-size:.83rem">No notifications</div>'; return; }
+                list.innerHTML = notifs.slice(0, 8).map(n => `<div onclick="markNotifRead('${n.id}')" class="notif-item" style="background:${n.read ? 'transparent' : 'rgba(37,99,235,.06)'}"><div style="font-size:.83rem;color:var(--t1);line-height:1.4">${n.message}</div><div style="font-size:.68rem;color:var(--t3);margin-top:3px">${fmtDate(n.createdAt)}</div></div>`).join("");
+                unsubscribeListeners.push(notifUnsub);
+            });
+        }
+        window.markNotifRead = async function (id) { await updateDoc(doc(db, "notifications", id), { read: true }); };
+        window.toggleNotifPanel = function () { const p = el("notif-panel"); p.style.display = p.style.display === "block" ? "none" : "block"; };
+        document.addEventListener("click", e => { if (!e.target.closest("#notif-btn") && !e.target.closest("#notif-panel")) { const p = el("notif-panel"); if (p) p.style.display = "none"; } });
+
+        function setCAOnline() { if (!currentUser || !currentProfile || currentProfile.role !== "ca") return; updateDoc(doc(db, "cas", currentUser.uid), { online: true, lastSeen: serverTimestamp() }).catch(() => { }); }
+        function setCAOffline() { if (!currentUser || !currentProfile || currentProfile.role !== "ca") return; updateDoc(doc(db, "cas", currentUser.uid), { online: false, lastSeen: serverTimestamp() }).catch(() => { }); }
+        window.addEventListener("beforeunload", setCAOffline);
+        document.addEventListener("visibilitychange", () => { if (document.hidden) setCAOffline(); else setCAOnline(); });
+
+        function updateDeadlineCountdowns() {
+            const now = new Date();
+            const deadlines = [
+                { id: "dl-itr", date: new Date("2025-07-31") },
+                { id: "dl-gst", date: (() => { const d = new Date(); d.setDate(20); if (d <= now) { d.setMonth(d.getMonth() + 1); d.setDate(20); } return d; })() },
+                { id: "dl-adv", date: new Date("2025-09-15") },
+                { id: "dl-tds", date: new Date("2025-07-31") },
+                { id: "dl-roc", date: new Date("2025-09-30") },
+            ];
+            deadlines.forEach(({ id, date }) => {
+                const el2 = el(id); if (!el2) return;
+                const diff = Math.ceil((date - now) / (1000 * 60 * 60 * 24));
+                if (diff < 0) { el2.textContent = "Past due"; el2.className = "dl-bdg dlr"; }
+                else if (diff === 0) { el2.textContent = "TODAY!"; el2.className = "dl-bdg dlr"; }
+                else if (diff <= 7) { el2.textContent = diff + "d left"; el2.className = "dl-bdg dlr"; }
+                else if (diff <= 30) { el2.textContent = diff + "d left"; el2.className = "dl-bdg dlo"; }
+                else { el2.textContent = diff + "d"; el2.className = "dl-bdg dlg"; }
+            });
+            const itrDiff = Math.ceil((new Date("2025-07-31") - now) / (1000 * 60 * 60 * 24));
+            const itrDays = el("cd-w-itr-days");
+            if (itrDays) { if (itrDiff < 0) { itrDays.textContent = "Past due"; itrDays.style.color = "var(--red)"; } else { itrDays.textContent = itrDiff + " days left"; itrDays.style.color = itrDiff <= 14 ? "var(--red)" : itrDiff <= 30 ? "var(--gold)" : "var(--green)"; } }
+        }
+
+        window.goDashFromMenu = function () { if (currentProfile?.role === "ca") goCADash(); else goClientDash(); };
+
+        // ─── DEMO LOGIN ───
+        window.demoLogin = function (role) {
+            closeAuth();
+            window._isDemoMode = true;
+            currentUser = { uid: 'demo-' + role };
+            window.currentUser = currentUser;
+            currentProfile = role === 'client' ? {
+                uid: 'demo-client', role: 'client',
+                first: 'Priya', last: 'Sharma',
+                displayName: 'Priya Sharma',
+                email: 'priya.demo@ledgerx.in',
+                phone: '9876543210', city: 'Mumbai',
+                riskScore: 28, riskLevel: 'Low',
+                riskReason: 'All documents verified. No anomalies detected.',
+                filings: []
+            } : {
+                uid: 'demo-ca', role: 'ca',
+                first: 'Rajesh', last: 'Mehta',
+                displayName: 'Rajesh Mehta',
+                email: 'rajesh.ca@ledgerx.in',
+                phone: '9123456789', city: 'Delhi',
+                caNum: 'ICAI-045892', exp: 12,
+                specs: ['Tax Filing & ITR', 'GST Compliance', 'Audit & Assurance'],
+                fee: 8500, bio: 'Senior CA with 12 years of practice in corporate tax and GST.',
+                rating: 4.8, reviewCount: 47, verified: true, clientCount: 134
+            };
+
+            window.currentProfile = currentProfile;
+            applySession();
+            // Override doLogout for demo — no Firebase signOut needed
+            window.doLogout = function () {
+                window._isDemoMode = false;
+                currentUser = null; currentProfile = null;
+                window.currentUser = null; window.currentProfile = null;
+                applySession();
+                showPage('home');
+                closeUserMenu();
+                toast('Logged out', 'info');
+            };
+            toast('👋 Logged in as Demo ' + (role === 'ca' ? 'CA' : 'Client'), 'success');
+
+            if (role === 'ca') {
+                showPage('ca-dash');
+                // Render demo CA dash manually
+                el('cad-greeting').textContent = greetTime('CA Rajesh');
+                el('cad-sub').textContent = 'CA No: ICAI-045892 · Delhi';
+                el('cad-w-clients').textContent = '7';
+                el('cad-w-rating').textContent = '4.8';
+                el('cad-w-reviews').textContent = '47';
+                el('cad-w-exp').textContent = '12 yrs';
+                el('cad-rev-total').textContent = '₹59,500';
+                el('cad-rev-change').textContent = '↑ 7 bookings this quarter';
+                el('cad-rev-change').style.color = 'var(--green)';
+                el('cad-clients').innerHTML = [
+                    { name: 'Priya Sharma', status: 'active', date: '12 Mar' },
+                    { name: 'Arjun Nair', status: 'pending', date: '14 Mar' },
+                    { name: 'Sunita Patel', status: 'completed', date: '02 Mar' },
+                    { name: 'Rohit Gupta', status: 'active', date: '08 Mar' },
+                ].map(b => `<div class="prog-item">
+      <div class="prog-dot pd-b" style="font-size:.8rem">👤</div>
+      <div class="prog-info"><div class="prog-name">${b.name}</div>
+        <div style="font-size:.73rem;color:var(--t3);margin-top:2px">${b.date}</div>
+      </div>
+      <span class="prog-status ${b.status === 'active' ? 's-on' : b.status === 'pending' ? 's-pend' : 's-done'}">${b.status}</span>
+    </div>`).join('');
+                el('cad-docs').innerHTML = [
+                    { name: 'Form16_Priya.pdf', by: 'Priya Sharma', analyzed: true },
+                    { name: 'BankStatement_Arjun.pdf', by: 'Arjun Nair', analyzed: false },
+                    { name: 'GST_Invoice_Sunita.pdf', by: 'Sunita Patel', analyzed: true },
+                ].map(d => `<div class="doc-row"><span class="dic">📄</span><span class="dname">${d.name}</span><span style="font-size:.72rem;color:var(--t3)">by ${d.by}</span><span class="dstat ${d.analyzed ? 'dv' : 'da'}">${d.analyzed ? '✓ Analyzed' : '⏳ Pending'}</span></div>`).join('');
+                setTimeout(() => renderLineChart('cad-chart-wrap', ['Jan', 'Feb', 'Mar'], [8500, 17000, 34000], '₹', '#f59e0b', '#f97316'), 200);
+                el('cad-pending-badge').textContent = '1'; el('cad-pending-badge').style.display = '';
+            } else {
+                showPage('client-dash');
+                el('cd-greeting').textContent = greetTime('Priya');
+                el('cd-sub').textContent = 'FY 2024-25 · priya.demo@ledgerx.in';
+                el('cd-w-bookings').textContent = '2';
+                el('cd-w-docs').textContent = '3';
+                el('cd-w-risk').textContent = '28/100';
+                el('cd-risk-num').textContent = '28/100';
+                el('cd-risk-num').style.color = 'var(--green)';
+                el('cd-risk-reason').textContent = 'All documents verified. No anomalies detected.';
+                setTimeout(() => { el('cd-risk-thumb').style.left = '28%'; }, 300);
+                el('cd-bookings').innerHTML = [
+                    { caName: 'Rajesh Mehta CA', status: 'active', date: '12 Mar' },
+                    { caName: 'Deepa Iyer CA', status: 'pending', date: '15 Mar' },
+                ].map(b => `<div class="prog-item">
+      <div class="prog-dot pd-b" style="font-size:.8rem">🧑‍💼</div>
+      <div class="prog-info"><div class="prog-name">${b.caName}</div>
+        <div style="font-size:.73rem;margin-top:2px"><span style="color:${b.status === 'active' ? 'var(--green)' : 'var(--gold)'};font-weight:600">${b.status === 'active' ? '✅ Active' : '⏳ Pending'}</span><span style="color:var(--t3)"> · ${b.date}</span></div>
+      </div>
+    </div>`).join('');
+                el('cd-docs').innerHTML = [
+                    { name: 'Form16_FY2425.pdf', analyzed: true },
+                    { name: 'BankStatement_Mar.pdf', analyzed: true },
+                    { name: 'GST_Invoice.pdf', analyzed: false },
+                ].map(d => `<div class="doc-row"><span class="dic">📄</span><span class="dname">${d.name}</span><span class="dstat ${d.analyzed ? 'dv' : 'da'}">${d.analyzed ? '✓ Analyzed' : '⏳ Pending'}</span></div>`).join('');
+                el('cd-rev-total').textContent = '3 docs';
+                el('cd-rev-change').textContent = '↑ Documents uploaded';
+                el('cd-rev-change').style.color = 'var(--green)';
+                setTimeout(() => renderLineChart('cd-chart-wrap', ['Jan', 'Feb', 'Mar'], [1, 1, 1], '', '#3b82f6', '#06b6d4'), 200);
+                updateDeadlineCountdowns();
+            }
+        };
+        console.log("✅ LedgerX initialized.");
+    </script>
+
+    <style>
+        /* ═══ LEDGERX — X LOGO INSPIRED DESIGN SYSTEM ═══ */
+        :root {
+            /* X-logo palette: dark steel, sharp whites, accent silver/blue */
+            --n950: #0a0a0a;
+            --n900: #111111;
+            --n800: #1a1a1a;
+            --n700: #222222;
+            --n600: #2d2d2d;
+            --blue: #1d9bf0;
+            --blue-l: #60c4ff;
+            --bglow: rgba(29, 155, 240, .2);
+            --cyan: #00d4e8;
+            --cyan-d: rgba(0, 212, 232, .12);
+            --gold: #ffd700;
+            --gold-d: rgba(255, 215, 0, .12);
+            --green: #00ba7c;
+            --green-d: rgba(0, 186, 124, .12);
+            --red: #f4212e;
+            --red-d: rgba(244, 33, 46, .1);
+            --orange: #ff7a00;
+            /* X aesthetic: near-blacks, sharp edges */
+            --s1: #111111;
+            --s2: #1a1a1a;
+            --s3: #222222;
+            --gb: rgba(255, 255, 255, .1);
+            --gb2: rgba(255, 255, 255, .06);
+            --t1: #e7e9ea;
+            --t2: #71767b;
+            --t3: #3e4144;
+            --x-border: rgba(255, 255, 255, .12);
+            --slow: cubic-bezier(.22, 1, .36, 1);
+            --ease: cubic-bezier(.4, 0, .2, 1);
+        }
+
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        html {
+            scroll-behavior: smooth
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--n950);
+            color: var(--t1);
+            overflow-x: hidden;
+            cursor: none;
+            min-height: 100vh
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--n900)
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--n700);
+            border-radius: 2px
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--n600)
+        }
+
+        /* ═══ CURSOR — X style sharp dot + ring ═══ */
+        #lx-cur {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            background: var(--t1);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 99999;
+            transform: translate(-50%, -50%);
+            transition: width .18s var(--slow), height .18s var(--slow), opacity .2s, background .25s, border-radius .25s;
+            mix-blend-mode: difference;
+        }
+
+        #lx-ring {
+            position: fixed;
+            width: 34px;
+            height: 34px;
+            border: 1px solid rgba(255, 255, 255, .3);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 99998;
+            transform: translate(-50%, -50%);
+            transition: width .55s var(--slow), height .55s var(--slow), border-color .4s, background .4s, border-radius .4s;
+        }
+
+        .cur-hover #lx-ring {
+            width: 48px;
+            height: 48px;
+            border-color: rgba(29, 155, 240, .7);
+            background: rgba(29, 155, 240, .05)
+        }
+
+        .cur-click #lx-cur {
+            width: 6px;
+            height: 6px
+        }
+
+        .cur-click #lx-ring {
+            width: 22px;
+            height: 22px;
+            border-color: rgba(96, 196, 255, .9);
+            border-width: 1.5px
+        }
+
+        /* CLICK RIPPLE */
+        .cur-ripple {
+            position: fixed;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 99996;
+            border: 1px solid rgba(255, 255, 255, .25);
+            animation: curRipple .65s var(--slow) forwards;
+        }
+
+        @keyframes curRipple {
+            from {
+                width: 8px;
+                height: 8px;
+                opacity: .8;
+                margin: -4px 0 0 -4px
+            }
+
+            to {
+                width: 55px;
+                height: 55px;
+                opacity: 0;
+                margin: -27.5px 0 0 -27.5px
+            }
+        }
+
+        /* ═══ BACKGROUND — X-style dark mesh ═══ */
+        /* Subtle X pattern in background */
+        .x-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .x-bg::before {
+            content: '';
+            position: absolute;
+            width: 1200px;
+            height: 1200px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background:
+                /* X shape via two diagonal lines */
+                linear-gradient(45deg, transparent 45%, rgba(29, 155, 240, .04) 49%, rgba(29, 155, 240, .04) 51%, transparent 55%),
+                linear-gradient(-45deg, transparent 45%, rgba(29, 155, 240, .04) 49%, rgba(29, 155, 240, .04) 51%, transparent 55%);
+            pointer-events: none;
+        }
+
+        .x-bg::after {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            top: -100px;
+            left: -100px;
+            background: radial-gradient(circle, rgba(29, 155, 240, .07) 0%, transparent 70%);
+            animation: dA 20s ease-in-out infinite;
+        }
+
+        .x-bg-r {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            bottom: -80px;
+            right: -80px;
+            background: radial-gradient(circle, rgba(0, 212, 232, .05) 0%, transparent 70%);
+            animation: dB 15s ease-in-out infinite;
+        }
+
+        @keyframes dA {
+
+            0%,
+            100% {
+                transform: translate(0, 0)
+            }
+
+            50% {
+                transform: translate(60px, 40px)
+            }
+        }
+
+        @keyframes dB {
+
+            0%,
+            100% {
+                transform: translate(0, 0)
+            }
+
+            50% {
+                transform: translate(-40px, 60px)
+            }
+        }
+
+        /* Grid overlay */
+        .x-grid {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: linear-gradient(rgba(255, 255, 255, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px);
+            background-size: 80px 80px;
+            mask-image: radial-gradient(ellipse 90% 90% at 50% 0%, black 0%, transparent 100%);
+        }
+
+        /* ═══ FADE IN ═══ */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity .7s var(--slow), transform .7s var(--slow)
+        }
+
+        .fade-in.show {
+            opacity: 1;
+            transform: translateY(0)
+        }
+
+        .d1 {
+            transition-delay: .1s
+        }
+
+        .d2 {
+            transition-delay: .2s
+        }
+
+        .d3 {
+            transition-delay: .3s
+        }
+
+        .d4 {
+            transition-delay: .4s
+        }
+
+        /* ═══ NAV — X-style dark header ═══ */
+        #topnav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 500;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 6%;
+            background: rgba(10, 10, 10, .92);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--x-border);
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            cursor: pointer
+        }
+
+        /* X LOGO SVG */
+        .logo-x-icon {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform .4s var(--slow), opacity .3s;
+        }
+
+        .logo-x-icon:hover {
+            transform: scale(1.08);
+            opacity: .85
+        }
+
+        .logo-x-icon svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .logo-txt {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 800;
+            letter-spacing: -.5px;
+            color: var(--t1);
+        }
+
+        .logo-ledger {
+            color: var(--t2)
+        }
+
+        .logo-X {
+            color: var(--t1)
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2px
+        }
+
+        .nav-link {
+            padding: 8px 14px;
+            border-radius: 99px;
+            font-size: .875rem;
+            font-weight: 500;
+            color: var(--t2);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-family: 'DM Sans', sans-serif;
+            transition: color .2s, background .2s;
+        }
+
+        .nav-link:hover {
+            color: var(--t1);
+            background: rgba(255, 255, 255, .06)
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 8px
+        }
+
+        /* NAV USER PILL */
+        .nav-user {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px 5px 5px;
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid var(--x-border);
+            border-radius: 99px;
+            cursor: pointer;
+            transition: border-color .25s, background .25s;
+        }
+
+        .nav-user:hover {
+            border-color: rgba(255, 255, 255, .25);
+            background: rgba(255, 255, 255, .07)
+        }
+
+        .nav-av {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--blue), var(--cyan));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .7rem;
+            font-weight: 800;
+            color: white;
+        }
+
+        /* USER MENU */
+        #user-menu {
+            display: none;
+            position: absolute;
+            top: 62px;
+            right: 6%;
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 16px;
+            padding: 6px;
+            min-width: 200px;
+            z-index: 600;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, .6);
+            animation: menuPop .25s var(--slow);
+        }
+
+        @keyframes menuPop {
+            from {
+                opacity: 0;
+                transform: translateY(-6px) scale(.97)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        .um-item {
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: .85rem;
+            cursor: pointer;
+            color: var(--t2);
+            transition: all .2s
+        }
+
+        .um-item:hover {
+            background: rgba(255, 255, 255, .06);
+            color: var(--t1)
+        }
+
+        .um-item.danger {
+            color: var(--red)
+        }
+
+        .um-item.danger:hover {
+            background: rgba(244, 33, 46, .08)
+        }
+
+        .um-sep {
+            height: 1px;
+            background: var(--x-border);
+            margin: 5px 0
+        }
+
+        /* ═══ BUTTONS — X-style sharp ═══ */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            transition: all .25s var(--slow);
+            white-space: nowrap;
+            border-radius: 99px;
+        }
+
+        .btn-sm {
+            padding: 8px 18px;
+            font-size: .83rem
+        }
+
+        .btn-md {
+            padding: 12px 22px;
+            font-size: .9rem
+        }
+
+        .btn-lg {
+            padding: 14px 28px;
+            font-size: .96rem
+        }
+
+        .btn-primary {
+            background: var(--t1);
+            color: var(--n950);
+            box-shadow: none;
+        }
+
+        .btn-primary:hover {
+            background: rgba(231, 233, 234, .85);
+            transform: scale(1.02)
+        }
+
+        .btn-primary:active {
+            transform: scale(.98)
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid var(--x-border);
+            color: var(--t1);
+        }
+
+        .btn-ghost:hover {
+            border-color: rgba(255, 255, 255, .4);
+            background: rgba(255, 255, 255, .06)
+        }
+
+        .btn-blue {
+            background: var(--blue);
+            color: white;
+            box-shadow: 0 4px 14px var(--bglow);
+        }
+
+        .btn-blue:hover {
+            background: #1a8cd8;
+            transform: scale(1.02);
+            box-shadow: 0 6px 20px rgba(29, 155, 240, .4)
+        }
+
+        /* PAGES */
+        .page {
+            display: none;
+            min-height: 100vh;
+            padding-top: 60px;
+            position: relative;
+            z-index: 1
+        }
+
+        .page.active {
+            display: block
+        }
+
+        /* ═══ AUTH MODAL ═══ */
+        #auth-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 800;
+            background: rgba(0, 0, 0, .7);
+            backdrop-filter: blur(16px);
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            overflow-y: auto;
+            padding: 24px 16px 40px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .3s;
+        }
+
+        #auth-overlay.open {
+            opacity: 1;
+            pointer-events: all
+        }
+
+        .auth-box {
+            width: 100%;
+            max-width: 440px;
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 20px;
+            padding: 32px 28px;
+            position: relative;
+            box-shadow: 0 40px 100px rgba(0, 0, 0, .7);
+            transform: translateY(20px) scale(.97);
+            transition: transform .4s var(--slow);
+            margin: auto 0;
+        }
+
+        #auth-overlay.open .auth-box {
+            transform: translateY(0) scale(1)
+        }
+
+        /* X mark on top of auth box */
+        .auth-x {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .auth-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, .06);
+            border: 1px solid var(--x-border);
+            color: var(--t2);
+            cursor: pointer;
+            font-size: .85rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all .2s;
+        }
+
+        .auth-close:hover {
+            background: rgba(255, 255, 255, .1);
+            color: var(--t1);
+            border-color: rgba(255, 255, 255, .25)
+        }
+
+        .auth-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 22px;
+            border-bottom: 1px solid var(--x-border)
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            font-size: .87rem;
+            font-weight: 600;
+            border-radius: 0;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: var(--t2);
+            font-family: 'DM Sans', sans-serif;
+            transition: all .25s;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px
+        }
+
+        .auth-tab.active {
+            color: var(--t1);
+            border-bottom-color: var(--blue)
+        }
+
+        .auth-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px
+        }
+
+        .form-label {
+            font-size: .75rem;
+            font-weight: 600;
+            color: var(--t2);
+            letter-spacing: .3px
+        }
+
+        .form-input,
+        .form-select {
+            background: var(--n800);
+            border: 1px solid var(--x-border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: .9rem;
+            color: var(--t1);
+            outline: none;
+            transition: border-color .2s, box-shadow .2s;
+            width: 100%;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(29, 155, 240, .15)
+        }
+
+        .form-input::placeholder {
+            color: var(--t3)
+        }
+
+        .form-select option {
+            background: var(--n800)
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px
+        }
+
+        .auth-err {
+            background: rgba(244, 33, 46, .08);
+            border: 1px solid rgba(244, 33, 46, .25);
+            border-radius: 8px;
+            padding: 10px 13px;
+            font-size: .82rem;
+            color: var(--red);
+            display: none
+        }
+
+        .auth-msg {
+            background: rgba(0, 186, 124, .08);
+            border: 1px solid rgba(0, 186, 124, .25);
+            border-radius: 8px;
+            padding: 10px 13px;
+            font-size: .82rem;
+            color: var(--green);
+            display: none
+        }
+
+        .specs-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px
+        }
+
+        .spec-opt {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--n800);
+            border: 1px solid var(--x-border);
+            padding: 6px 11px;
+            border-radius: 99px;
+            font-size: .78rem;
+            cursor: pointer;
+            color: var(--t2);
+            transition: all .2s
+        }
+
+        .spec-opt:hover {
+            border-color: var(--blue);
+            color: var(--t1)
+        }
+
+        .spec-opt input {
+            accent-color: var(--blue)
+        }
+
+        /* ═══ HERO ═══ */
+        .hero {
+            min-height: calc(100vh - 60px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 80px 6% 60px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Wavy canvas behind hero */
+        #hero-wave-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .hero>* {
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(29, 155, 240, .1);
+            border: 1px solid rgba(29, 155, 240, .25);
+            border-radius: 99px;
+            padding: 7px 18px;
+            font-size: .75rem;
+            font-weight: 700;
+            color: var(--blue-l);
+            letter-spacing: .5px;
+            margin-bottom: 28px;
+            animation: heroIn .8s .1s var(--slow) both;
+            position: relative;
+            z-index: 2;
+        }
+
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulseGlow 2s infinite
+        }
+
+        @keyframes pulseGlow {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 186, 124, .6)
+            }
+
+            50% {
+                box-shadow: 0 0 0 7px rgba(0, 186, 124, 0)
+            }
+        }
+
+        .hero h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: clamp(3rem, 7.5vw, 6.8rem);
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -3px;
+            color: var(--t1);
+            margin-bottom: 22px;
+            animation: heroIn .9s .2s var(--slow) both;
+            position: relative;
+            z-index: 2;
+        }
+
+        .grad-text {
+            background: linear-gradient(135deg, var(--blue-l), var(--cyan), var(--blue-l));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-size: 200%;
+            animation: gs 5s linear infinite;
+        }
+
+        @keyframes gs {
+            0% {
+                background-position: 0%
+            }
+
+            100% {
+                background-position: 200%
+            }
+        }
+
+        @keyframes heroIn {
+            from {
+                opacity: 0;
+                transform: translateY(28px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        .hero-sub {
+            font-size: 1.05rem;
+            color: var(--t2);
+            max-width: 520px;
+            line-height: 1.75;
+            margin-bottom: 38px;
+            animation: heroIn .9s .35s var(--slow) both
+        }
+
+        .hero-cta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+            animation: heroIn .9s .45s var(--slow) both
+        }
+
+        /* STATS RIBBON */
+        .stats-ribbon {
+            display: flex;
+            border-top: 1px solid var(--x-border);
+            border-bottom: 1px solid var(--x-border)
+        }
+
+        .stat-blk {
+            flex: 1;
+            text-align: center;
+            padding: 34px 16px;
+            border-right: 1px solid var(--x-border);
+            transition: background .3s
+        }
+
+        .stat-blk:last-child {
+            border-right: none
+        }
+
+        .stat-blk:hover {
+            background: rgba(255, 255, 255, .02)
+        }
+
+        .stat-num {
+            font-family: 'Syne', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--t1);
+            line-height: 1
+        }
+
+        .stat-lbl {
+            font-size: .68rem;
+            color: var(--t3);
+            margin-top: 5px;
+            letter-spacing: 1px;
+            text-transform: uppercase
+        }
+
+        /* SECTIONS */
+        .section {
+            padding: 80px 6%
+        }
+
+        .sec-lbl {
+            font-size: .68rem;
+            font-weight: 700;
+            letter-spacing: 2.5px;
+            text-transform: uppercase;
+            color: var(--blue-l);
+            margin-bottom: 12px;
+            display: block
+        }
+
+        .sec-title {
+            font-family: 'Syne', sans-serif;
+            font-size: clamp(1.9rem, 4vw, 3rem);
+            font-weight: 800;
+            letter-spacing: -1.5px;
+            line-height: 1.05;
+            margin-bottom: 14px;
+            color: var(--t1)
+        }
+
+        .sec-sub {
+            color: var(--t2);
+            font-size: .97rem;
+            max-width: 460px;
+            line-height: 1.75
+        }
+
+        /* SERVICE CARDS */
+        .srv-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1px;
+            background: var(--x-border);
+            margin-top: 48px;
+            border: 1px solid var(--x-border);
+            border-radius: 16px;
+            overflow: hidden
+        }
+
+        .srv-card {
+            background: var(--n900);
+            padding: 28px 24px;
+            position: relative;
+            overflow: hidden;
+            transition: background .3s;
+            cursor: pointer
+        }
+
+        .srv-card:hover {
+            background: var(--n800)
+        }
+
+        .srv-ic {
+            font-size: 2rem;
+            margin-bottom: 16px;
+            display: block
+        }
+
+        .srv-title {
+            font-family: 'Syne', sans-serif;
+            font-size: .97rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--t1)
+        }
+
+        .srv-desc {
+            font-size: .83rem;
+            color: var(--t2);
+            line-height: 1.65
+        }
+
+        .srv-tag {
+            display: inline-block;
+            margin-top: 14px;
+            font-size: .65rem;
+            font-weight: 700;
+            letter-spacing: .4px;
+            padding: 3px 10px;
+            border-radius: 99px;
+            border: 1px solid
+        }
+
+        .st-b {
+            background: rgba(29, 155, 240, .1);
+            color: var(--blue-l);
+            border-color: rgba(29, 155, 240, .2)
+        }
+
+        .st-c {
+            background: rgba(0, 212, 232, .1);
+            color: var(--cyan);
+            border-color: rgba(0, 212, 232, .2)
+        }
+
+        .st-g {
+            background: rgba(255, 215, 0, .1);
+            color: var(--gold);
+            border-color: rgba(255, 215, 0, .2)
+        }
+
+        .st-gr {
+            background: rgba(0, 186, 124, .1);
+            color: var(--green);
+            border-color: rgba(0, 186, 124, .2)
+        }
+
+        /* AI CARDS */
+        .ai-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--x-border);
+            margin-top: 48px;
+            border: 1px solid var(--x-border);
+            border-radius: 16px;
+            overflow: hidden
+        }
+
+        .ai-card {
+            background: var(--n900);
+            padding: 32px;
+            position: relative;
+            overflow: hidden;
+            transition: background .3s
+        }
+
+        .ai-card:hover {
+            background: var(--n800)
+        }
+
+        .ai-stripe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px
+        }
+
+        .as1 {
+            background: linear-gradient(90deg, var(--blue), var(--cyan))
+        }
+
+        .as2 {
+            background: linear-gradient(90deg, var(--gold), var(--orange))
+        }
+
+        .as3 {
+            background: linear-gradient(90deg, var(--cyan), var(--green))
+        }
+
+        .as4 {
+            background: linear-gradient(90deg, var(--red), var(--orange))
+        }
+
+        .ai-ic {
+            font-size: 1.8rem;
+            margin-bottom: 12px
+        }
+
+        .ai-algo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .64rem;
+            color: var(--t3);
+            margin-bottom: 10px
+        }
+
+        .ai-card h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--t1)
+        }
+
+        .ai-card p {
+            font-size: .85rem;
+            color: var(--t2);
+            line-height: 1.7
+        }
+
+        .ai-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 12px;
+            border-radius: 99px;
+            font-size: .7rem;
+            font-weight: 700;
+            margin-top: 14px;
+            border: 1px solid
+        }
+
+        .pill-b {
+            background: rgba(29, 155, 240, .1);
+            color: var(--blue-l);
+            border-color: rgba(29, 155, 240, .2)
+        }
+
+        .pill-g {
+            background: rgba(255, 215, 0, .1);
+            color: var(--gold);
+            border-color: rgba(255, 215, 0, .2)
+        }
+
+        .pill-c {
+            background: rgba(0, 212, 232, .1);
+            color: var(--cyan);
+            border-color: rgba(0, 212, 232, .2)
+        }
+
+        .pill-r {
+            background: rgba(244, 33, 46, .08);
+            color: var(--red);
+            border-color: rgba(244, 33, 46, .2)
+        }
+
+        /* STEPS */
+        .steps-row {
+            display: flex;
+            margin-top: 52px;
+            position: relative
+        }
+
+        .steps-row::before {
+            content: '';
+            position: absolute;
+            top: 35px;
+            left: 8%;
+            right: 8%;
+            height: 1px;
+            background: var(--x-border)
+        }
+
+        .step-item {
+            flex: 1;
+            text-align: center;
+            padding: 0 10px
+        }
+
+        .step-circle {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 18px;
+            position: relative;
+            z-index: 1;
+            font-family: 'Syne', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: var(--t1);
+            transition: all .4s var(--slow)
+        }
+
+        .step-item:hover .step-circle {
+            background: var(--n800);
+            border-color: rgba(255, 255, 255, .25);
+            box-shadow: 0 0 20px rgba(29, 155, 240, .15)
+        }
+
+        .step-item h4 {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            font-size: .9rem;
+            margin-bottom: 6px;
+            color: var(--t1)
+        }
+
+        .step-item p {
+            font-size: .8rem;
+            color: var(--t2);
+            line-height: 1.6;
+            max-width: 150px;
+            margin: 0 auto
+        }
+
+        /* ═══ MARKETPLACE ═══ */
+        .mkt-wrap {
+            padding: 36px 6%
+        }
+
+        .mkt-top h2 {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: -.5px;
+            margin-bottom: 5px;
+            color: var(--t1)
+        }
+
+        .mkt-top p {
+            color: var(--t2);
+            font-size: .9rem
+        }
+
+        .search-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 16px
+        }
+
+        .s-input,
+        .s-select {
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 99px;
+            padding: 10px 16px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: .87rem;
+            color: var(--t1);
+            outline: none;
+            transition: border-color .2s
+        }
+
+        .s-input {
+            flex: 1;
+            min-width: 200px
+        }
+
+        .s-input::placeholder {
+            color: var(--t3)
+        }
+
+        .s-input:focus,
+        .s-select:focus {
+            border-color: var(--blue)
+        }
+
+        .amb-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 14px;
+            padding: 16px 22px;
+            margin: 20px 0 26px
+        }
+
+        .amb-left {
+            display: flex;
+            align-items: center;
+            gap: 13px
+        }
+
+        .amb-ic {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: var(--blue);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem
+        }
+
+        /* CA CARDS */
+        .ca-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1px;
+            background: var(--x-border);
+            border: 1px solid var(--x-border);
+            border-radius: 16px;
+            overflow: hidden
+        }
+
+        .ca-card {
+            background: var(--n900);
+            padding: 22px;
+            transition: background .3s;
+            cursor: pointer
+        }
+
+        .ca-card:hover {
+            background: var(--n800)
+        }
+
+        .ca-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 14px
+        }
+
+        .ca-av {
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Syne', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: white
+        }
+
+        .av-b {
+            background: linear-gradient(135deg, #1565c0, #1d9bf0)
+        }
+
+        .av-c {
+            background: linear-gradient(135deg, #006064, #00d4e8)
+        }
+
+        .av-g {
+            background: linear-gradient(135deg, #1b5e20, #00ba7c)
+        }
+
+        .av-p {
+            background: linear-gradient(135deg, #4a148c, #9c27b0)
+        }
+
+        .av-o {
+            background: linear-gradient(135deg, #bf360c, #ff7a00)
+        }
+
+        .av-i {
+            background: linear-gradient(135deg, #880e4f, #e91e63)
+        }
+
+        .ca-meta h4 {
+            font-family: 'Syne', sans-serif;
+            font-size: .93rem;
+            font-weight: 700;
+            margin-bottom: 2px;
+            color: var(--t1)
+        }
+
+        .ca-sub {
+            font-size: .75rem;
+            color: var(--t2)
+        }
+
+        .ca-stars {
+            font-size: .78rem;
+            color: var(--gold);
+            margin-top: 3px
+        }
+
+        .verified {
+            display: inline-flex;
+            align-items: center;
+            font-size: .62rem;
+            font-weight: 700;
+            color: var(--green);
+            background: rgba(0, 186, 124, .1);
+            border: 1px solid rgba(0, 186, 124, .2);
+            padding: 1px 7px;
+            border-radius: 99px;
+            margin-left: 5px
+        }
+
+        .online-dot {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: .62rem;
+            color: var(--green);
+            margin-left: 5px
+        }
+
+        .dot-pulse {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: pulseGlow 2s infinite;
+            display: inline-block
+        }
+
+        .ca-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 12px
+        }
+
+        .ctag {
+            font-size: .65rem;
+            font-weight: 600;
+            padding: 3px 9px;
+            border-radius: 99px;
+            background: rgba(255, 255, 255, .05);
+            color: var(--t2);
+            border: 1px solid var(--x-border)
+        }
+
+        .score-wrap {
+            margin-bottom: 13px
+        }
+
+        .score-bg {
+            background: var(--n800);
+            border-radius: 2px;
+            height: 3px;
+            overflow: hidden
+        }
+
+        .score-fill {
+            height: 100%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, var(--blue), var(--cyan));
+            transition: width 1.2s var(--slow)
+        }
+
+        .score-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: .67rem;
+            color: var(--t3);
+            margin-top: 4px
+        }
+
+        .score-labels span:last-child {
+            color: var(--t2);
+            font-weight: 600
+        }
+
+        .ca-foot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid var(--x-border)
+        }
+
+        .ca-price {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: var(--t1)
+        }
+
+        .ca-price small {
+            font-family: 'DM Sans', sans-serif;
+            font-size: .68rem;
+            color: var(--t3);
+            font-weight: 400
+        }
+
+        /* EMPTY STATE */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--t2)
+        }
+
+        .empty-icon {
+            font-size: 2.8rem;
+            margin-bottom: 14px;
+            opacity: .4
+        }
+
+        .empty-state h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--t1);
+            margin-bottom: 7px
+        }
+
+        .empty-state p {
+            font-size: .85rem;
+            color: var(--t2)
+        }
+
+        /* ═══ DASHBOARD ═══ */
+        .dash-shell {
+            display: grid;
+            grid-template-columns: 210px 1fr;
+            min-height: calc(100vh - 60px);
+            position: relative;
+            z-index: 10;
+        }
+
+        .sidebar {
+            background: var(--n950);
+            border-right: 1px solid var(--x-border);
+            padding: 16px 0;
+            position: sticky;
+            top: 60px;
+            height: calc(100vh - 60px);
+            overflow-y: auto;
+            z-index: 20;
+        }
+
+        .sb-lbl {
+            font-size: .65rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--t3);
+            padding: 0 18px 6px
+        }
+
+        .sb-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 18px;
+            font-size: .85rem;
+            font-weight: 500;
+            color: var(--t2);
+            cursor: pointer;
+            border-radius: 99px;
+            margin: 1px 8px;
+            transition: all .2s
+        }
+
+        .sb-item:hover {
+            background: rgba(255, 255, 255, .06);
+            color: var(--t1)
+        }
+
+        .sb-item.on {
+            background: rgba(255, 255, 255, .08);
+            color: var(--t1);
+            font-weight: 700
+        }
+
+        .sb-ic {
+            font-size: .95rem;
+            width: 18px;
+            text-align: center
+        }
+
+        .sb-badge {
+            margin-left: auto;
+            background: var(--blue);
+            color: white;
+            font-size: .58rem;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 99px
+        }
+
+        .dash-main {
+            padding: 24px;
+            overflow-y: auto;
+            background: var(--n950)
+        }
+
+        .dash-hdr {
+            margin-bottom: 22px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--x-border)
+        }
+
+        .dash-hdr h2 {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.55rem;
+            font-weight: 800;
+            letter-spacing: -.3px;
+            margin-bottom: 3px;
+            color: var(--t1)
+        }
+
+        .dash-hdr p {
+            color: var(--t2);
+            font-size: .85rem
+        }
+
+        /* WIDGETS */
+        .wg {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1px;
+            background: var(--x-border);
+            border: 1px solid var(--x-border);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 18px
+        }
+
+        .widget {
+            background: var(--n900);
+            padding: 18px 16px;
+            position: relative;
+            overflow: hidden;
+            transition: background .25s
+        }
+
+        .widget:hover {
+            background: var(--n800)
+        }
+
+        .wglow {
+            display: none
+        }
+
+        .widget-ic {
+            font-size: 1.2rem;
+            margin-bottom: 8px
+        }
+
+        .widget-val {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.7rem;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 3px;
+            color: var(--t1)
+        }
+
+        .widget-lbl {
+            font-size: .67rem;
+            color: var(--t3);
+            text-transform: uppercase;
+            letter-spacing: .6px
+        }
+
+        .widget-ch {
+            font-size: .7rem;
+            margin-top: 6px;
+            color: var(--t3)
+        }
+
+        /* REVENUE CARD */
+        .rev-card {
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 12px;
+            padding: 22px;
+            margin-bottom: 16px
+        }
+
+        .rev-hdr {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 20px
+        }
+
+        .rev-hdr h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 3px;
+            color: var(--t1)
+        }
+
+        .rev-hdr p {
+            font-size: .76rem;
+            color: var(--t2)
+        }
+
+        .rev-total {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--t1)
+        }
+
+        .rev-change {
+            font-size: .73rem
+        }
+
+        /* DASH ROWS / CARDS */
+        .dash-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--x-border);
+            border: 1px solid var(--x-border);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 16px
+        }
+
+        .dash-card {
+            background: var(--n900);
+            padding: 20px
+        }
+
+        .dash-card h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: .92rem;
+            font-weight: 700;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: var(--t1)
+        }
+
+        .dash-card-solo {
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px
+        }
+
+        .dash-card-solo h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: .92rem;
+            font-weight: 700;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: var(--t1)
+        }
+
+        /* PROGRESS */
+        .prog-item {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--x-border)
+        }
+
+        .prog-item:last-child {
+            border-bottom: none
+        }
+
+        .prog-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .85rem;
+            flex-shrink: 0;
+            background: var(--n800)
+        }
+
+        .pd-b {
+            background: rgba(29, 155, 240, .12)
+        }
+
+        .pd-g {
+            background: rgba(255, 215, 0, .1)
+        }
+
+        .pd-c {
+            background: rgba(0, 212, 232, .1)
+        }
+
+        .pd-gr {
+            background: rgba(0, 186, 124, .1)
+        }
+
+        .prog-info {
+            flex: 1
+        }
+
+        .prog-name {
+            font-size: .85rem;
+            font-weight: 600;
+            margin-bottom: 3px;
+            color: var(--t1)
+        }
+
+        .prog-status {
+            font-size: .65rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 99px;
+            white-space: nowrap
+        }
+
+        .s-on {
+            background: rgba(29, 155, 240, .12);
+            color: var(--blue-l)
+        }
+
+        .s-done {
+            background: rgba(0, 186, 124, .1);
+            color: var(--green)
+        }
+
+        .s-pend {
+            background: rgba(255, 215, 0, .1);
+            color: var(--gold)
+        }
+
+        /* DEADLINES */
+        .dl-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--x-border)
+        }
+
+        .dl-item:last-child {
+            border-bottom: none
+        }
+
+        .dl-l {
+            display: flex;
+            align-items: center;
+            gap: 10px
+        }
+
+        .dl-ball {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0
+        }
+
+        .db-r {
+            background: var(--red)
+        }
+
+        .db-o {
+            background: var(--orange)
+        }
+
+        .db-g {
+            background: var(--green)
+        }
+
+        .dl-name {
+            font-size: .84rem;
+            font-weight: 600;
+            color: var(--t1)
+        }
+
+        .dl-date {
+            font-size: .7rem;
+            color: var(--t3);
+            margin-top: 2px
+        }
+
+        .dl-bdg {
+            font-size: .68rem;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 6px
+        }
+
+        .dlr {
+            background: rgba(244, 33, 46, .1);
+            color: var(--red)
+        }
+
+        .dlo {
+            background: rgba(255, 122, 0, .1);
+            color: var(--orange)
+        }
+
+        .dlg {
+            background: rgba(0, 186, 124, .1);
+            color: var(--green)
+        }
+
+        /* RISK */
+        .risk-scale {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: .75rem
+        }
+
+        .risk-bg {
+            background: var(--n800);
+            border-radius: 99px;
+            height: 8px;
+            position: relative;
+            overflow: visible
+        }
+
+        .risk-grad {
+            position: absolute;
+            inset: 0;
+            border-radius: 99px;
+            background: linear-gradient(90deg, var(--green), var(--gold), var(--red))
+        }
+
+        .risk-thumb {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            border: 2px solid var(--n950);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+            transition: left 1.4s var(--slow)
+        }
+
+        /* DOC UPLOAD */
+        .doc-drop {
+            border: 1px dashed var(--x-border);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color .25s, background .25s
+        }
+
+        .doc-drop:hover {
+            border-color: var(--blue);
+            background: rgba(29, 155, 240, .04)
+        }
+
+        .doc-drop .di {
+            font-size: 1.6rem;
+            margin-bottom: 8px
+        }
+
+        .doc-row {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 8px 12px;
+            background: var(--n800);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            transition: background .2s
+        }
+
+        .doc-row:hover {
+            background: var(--n700)
+        }
+
+        .dic {
+            font-size: .9rem
+        }
+
+        .dname {
+            font-size: .82rem;
+            font-weight: 500;
+            flex: 1;
+            color: var(--t1)
+        }
+
+        .dsize {
+            font-size: .7rem;
+            color: var(--t3)
+        }
+
+        .dstat {
+            font-size: .67rem;
+            font-weight: 700
+        }
+
+        .dv {
+            color: var(--green)
+        }
+
+        .da {
+            color: var(--gold)
+        }
+
+        #upload-status {
+            display: none;
+            font-size: .81rem;
+            color: var(--gold);
+            padding: 8px 12px;
+            background: rgba(255, 215, 0, .06);
+            border: 1px solid rgba(255, 215, 0, .2);
+            border-radius: 8px;
+            margin-top: 8px;
+            text-align: center
+        }
+
+        /* CT TABLE */
+        .ct-head {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--x-border);
+            font-size: .67rem;
+            font-weight: 700;
+            letter-spacing: .7px;
+            text-transform: uppercase;
+            color: var(--t3)
+        }
+
+        .ct-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 12px;
+            padding: 11px 0;
+            border-bottom: 1px solid var(--x-border);
+            align-items: center;
+            font-size: .82rem;
+            transition: background .2s
+        }
+
+        .ct-row:hover {
+            background: rgba(255, 255, 255, .02)
+        }
+
+        .ct-row:last-child {
+            border-bottom: none
+        }
+
+        .ct-name {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            color: var(--t1)
+        }
+
+        .ct-av {
+            width: 26px;
+            height: 26px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .65rem;
+            font-weight: 800;
+            font-family: 'Syne', sans-serif;
+            color: white
+        }
+
+        /* CHAT MODAL MSGS */
+        .chat-modal-msgs {
+            height: 300px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            padding: 13px;
+            background: var(--n800);
+            border-radius: 10px;
+            margin-bottom: 12px
+        }
+
+        .chat-modal-msgs::-webkit-scrollbar {
+            width: 3px
+        }
+
+        .chat-modal-msgs::-webkit-scrollbar-thumb {
+            background: var(--n700)
+        }
+
+        /* INFO GRID */
+        .info-grid {
+            display: flex;
+            flex-direction: column
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--x-border);
+            font-size: .84rem
+        }
+
+        .info-row:last-child {
+            border-bottom: none
+        }
+
+        .info-row span:first-child {
+            color: var(--t2)
+        }
+
+        .info-row span:last-child {
+            font-weight: 600;
+            color: var(--t1)
+        }
+
+        /* MODALS */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 700;
+            background: rgba(0, 0, 0, .7);
+            backdrop-filter: blur(12px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .3s
+        }
+
+        .modal-overlay.open {
+            opacity: 1;
+            pointer-events: all
+        }
+
+        .modal-box {
+            width: 100%;
+            max-width: 500px;
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+            transform: translateY(16px) scale(.97);
+            transition: transform .4s var(--slow);
+            max-height: 90vh;
+            overflow-y: auto
+        }
+
+        .modal-overlay.open .modal-box {
+            transform: translateY(0) scale(1)
+        }
+
+        .modal-box.wide {
+            max-width: 640px
+        }
+
+        /* ═══ CHATBOT ═══ */
+        .chat-fab {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 600;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: var(--t1);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, .4);
+            transition: transform .3s var(--slow), background .25s;
+        }
+
+        .chat-fab:hover {
+            transform: scale(1.1);
+            background: rgba(231, 233, 234, .9)
+        }
+
+        /* X icon for chatbot button */
+        .chat-fab-inner {
+            width: 26px;
+            height: 26px;
+            position: relative;
+        }
+
+        .chat-fab-inner::before,
+        .chat-fab-inner::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--n950);
+            border-radius: 2px;
+        }
+
+        .chat-fab-inner::before {
+            transform: translateY(-50%) rotate(45deg)
+        }
+
+        .chat-fab-inner::after {
+            transform: translateY(-50%) rotate(-45deg)
+        }
+
+        .fab-dot {
+            position: absolute;
+            top: -1px;
+            right: -1px;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: var(--green);
+            border: 2px solid var(--n950);
+            animation: pulseGlow 2s infinite
+        }
+
+        .chatbox {
+            position: fixed;
+            bottom: 86px;
+            right: 24px;
+            width: 360px;
+            height: 490px;
+            border-radius: 18px;
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            z-index: 900;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+            transform: translateY(14px) scale(.96);
+            opacity: 0;
+            transition: transform .4s var(--slow), opacity .35s;
+        }
+
+        .chatbox.open {
+            transform: translateY(0) scale(1);
+            opacity: 1
+        }
+
+        .chat-hd {
+            padding: 13px 15px;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            border-bottom: 1px solid var(--x-border)
+        }
+
+        .chat-hd-av {
+            width: 32px;
+            height: 32px;
+            background: var(--blue);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .9rem;
+            color: white
+        }
+
+        .chat-hd-info h4 {
+            font-family: 'Syne', sans-serif;
+            font-size: .87rem;
+            font-weight: 700;
+            color: var(--t1)
+        }
+
+        .chat-hd-info p {
+            font-size: .67rem;
+            color: var(--green)
+        }
+
+        .chat-hd-close {
+            margin-left: auto;
+            background: rgba(255, 255, 255, .06);
+            border: 1px solid var(--x-border);
+            border-radius: 6px;
+            color: var(--t3);
+            font-size: .85rem;
+            cursor: pointer;
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all .2s
+        }
+
+        .chat-hd-close:hover {
+            color: var(--t1);
+            background: rgba(255, 255, 255, .1)
+        }
+
+        .chat-msgs-inner {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 9px
+        }
+
+        .chat-msgs-inner::-webkit-scrollbar {
+            width: 3px
+        }
+
+        .chat-msgs-inner::-webkit-scrollbar-thumb {
+            background: var(--n700)
+        }
+
+        .cmsg {
+            max-width: 88%;
+            animation: msgIn .3s var(--slow)
+        }
+
+        @keyframes msgIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        .cmsg-ai {
+            align-self: flex-start
+        }
+
+        .cmsg-user {
+            align-self: flex-end
+        }
+
+        .cbubble {
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: .83rem;
+            line-height: 1.6
+        }
+
+        .cmsg-ai .cbubble {
+            background: var(--n800);
+            border: 1px solid var(--x-border);
+            color: var(--t1);
+            border-bottom-left-radius: 4px
+        }
+
+        .cmsg-user .cbubble {
+            background: var(--blue);
+            color: white;
+            border-bottom-right-radius: 4px
+        }
+
+        .ctime {
+            font-size: .6rem;
+            color: var(--t3);
+            margin-top: 3px;
+            padding: 0 2px
+        }
+
+        .cmsg-user .ctime {
+            text-align: right
+        }
+
+        .typing {
+            display: flex;
+            gap: 4px;
+            padding: 10px 14px;
+            background: var(--n800);
+            border: 1px solid var(--x-border);
+            border-radius: 14px;
+            border-bottom-left-radius: 4px;
+            width: fit-content
+        }
+
+        .tdot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--t3);
+            animation: td 1.2s infinite
+        }
+
+        .tdot:nth-child(2) {
+            animation-delay: .2s
+        }
+
+        .tdot:nth-child(3) {
+            animation-delay: .4s
+        }
+
+        @keyframes td {
+
+            0%,
+            60%,
+            100% {
+                transform: translateY(0);
+                opacity: .4
+            }
+
+            30% {
+                transform: translateY(-5px);
+                opacity: 1
+            }
+        }
+
+        .chat-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            padding: 0 12px 9px
+        }
+
+        .cchip {
+            background: var(--n800);
+            border: 1px solid var(--x-border);
+            border-radius: 99px;
+            padding: 5px 11px;
+            font-size: .7rem;
+            color: var(--t2);
+            cursor: pointer;
+            transition: all .2s
+        }
+
+        .cchip:hover {
+            border-color: var(--blue);
+            color: var(--t1)
+        }
+
+        .chat-inp-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+            padding: 10px 12px;
+            border-top: 1px solid var(--x-border)
+        }
+
+        .chat-inp {
+            flex: 1;
+            background: var(--n800);
+            border: 1px solid var(--x-border);
+            border-radius: 99px;
+            padding: 9px 14px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: .83rem;
+            color: var(--t1);
+            outline: none;
+            resize: none;
+            max-height: 80px;
+            transition: border-color .2s
+        }
+
+        .chat-inp:focus {
+            border-color: var(--blue)
+        }
+
+        .chat-send {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: var(--blue);
+            border: none;
+            cursor: pointer;
+            font-size: .85rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: transform .25s, background .2s;
+            color: white
+        }
+
+        .chat-send:hover {
+            transform: scale(1.08);
+            background: #1a8cd8
+        }
+
+        /* TOAST */
+        .toast {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%) translateY(16px);
+            background: var(--n900);
+            border: 1px solid var(--x-border);
+            border-radius: 99px;
+            padding: 11px 20px;
+            font-size: .85rem;
+            font-weight: 500;
+            color: var(--t1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+            z-index: 9000;
+            opacity: 0;
+            transition: all .35s var(--slow);
+            pointer-events: none;
+            white-space: nowrap
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0)
+        }
+
+        .toast-success {
+            border-color: rgba(0, 186, 124, .3);
+            color: var(--green)
+        }
+
+        .toast-error {
+            border-color: rgba(244, 33, 46, .3);
+            color: var(--red)
+        }
+
+        /* NOTIFICATIONS */
+        .notif-item {
+            padding: 9px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background .2s;
+            border-bottom: 1px solid var(--x-border);
+            margin-bottom: 2px
+        }
+
+        .notif-item:hover {
+            background: rgba(255, 255, 255, .04)
+        }
+
+        .notif-item:last-child {
+            border-bottom: none
+        }
+
+        /* FOOTER */
+        footer {
+            background: var(--n950);
+            border-top: 1px solid var(--x-border);
+            padding: 50px 6% 28px
+        }
+
+        .ft-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px
+        }
+
+        .ft-brand p {
+            font-size: .82rem;
+            color: var(--t3);
+            line-height: 1.75;
+            max-width: 260px;
+            margin-top: 11px
+        }
+
+        .ft-col h5 {
+            font-size: .68rem;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--t2);
+            margin-bottom: 14px
+        }
+
+        .ft-col a {
+            display: block;
+            font-size: .82rem;
+            color: var(--t3);
+            text-decoration: none;
+            margin-bottom: 9px;
+            cursor: pointer;
+            transition: color .2s
+        }
+
+        .ft-col a:hover {
+            color: var(--t1)
+        }
+
+        .ft-bottom {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 20px;
+            border-top: 1px solid var(--x-border);
+            font-size: .75rem;
+            color: var(--t3)
+        }
+
+        /* RESPONSIVE */
+        @media(max-width:1024px) {
+            .srv-grid {
+                grid-template-columns: 1fr 1fr
+            }
+
+            .ai-grid {
+                grid-template-columns: 1fr
+            }
+
+            .ca-grid {
+                grid-template-columns: 1fr 1fr
+            }
+
+            .wg {
+                grid-template-columns: 1fr 1fr
+            }
+
+            .dash-row {
+                grid-template-columns: 1fr
+            }
+
+            .ft-grid {
+                grid-template-columns: 1fr 1fr
+            }
+        }
+
+        @media(max-width:768px) {
+            .nav-links {
+                display: none
+            }
+
+            .dash-shell {
+                grid-template-columns: 1fr
+            }
+
+            .sidebar {
+                display: none
+            }
+
+            .ca-grid {
+                grid-template-columns: 1fr
+            }
+
+            .srv-grid {
+                grid-template-columns: 1fr
+            }
+
+            .steps-row {
+                flex-direction: column;
+                align-items: center
+            }
+
+            .steps-row::before {
+                display: none
+            }
+
+            .chatbox {
+                width: calc(100vw - 32px);
+                right: 16px
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- CURSOR -->
+    <div id="lx-cur"></div>
+    <div id="lx-ring"></div>
+
+    <!-- BG -->
+    <div class="x-bg">
+        <div class="x-bg-r"></div>
+    </div>
+    <div class="x-grid"></div>
+
+    <!-- ═══ NAVBAR ═══ -->
+    <nav id="topnav">
+        <div class="nav-logo" onclick="goHome()">
+            <!-- X Logo SVG inspired by the uploaded logo -->
+            <div class="logo-x-icon">
+                <svg viewBox="0 0 300 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66"
+                        fill="white" />
+                </svg>
+            </div>
+            <span class="logo-txt"><span class="logo-ledger">Ledger</span><span class="logo-X">X</span></span>
+        </div>
+        <div class="nav-links">
+            <button class="nav-link" onclick="goHome()">Home</button>
+            <button class="nav-link" onclick="goMarket()">Find a CA</button>
+            <button class="nav-link" id="nav-dash-link" style="display:none" onclick="goClientDash()">Dashboard</button>
+            <button class="nav-link" id="nav-cadash-link" style="display:none" onclick="goCADash()">CA Portal</button>
+        </div>
+        <div class="nav-right">
+            <div id="nav-loggedout" style="display:flex;gap:8px">
+                <button class="btn btn-ghost btn-sm" onclick="openAuth('login')">Sign in</button>
+                <button class="btn btn-primary btn-sm" onclick="openAuth('signup')">Get started</button>
+            </div>
+            <div id="nav-loggedin" style="display:none;align-items:center;gap:8px;position:relative">
+                <!-- Bell -->
+                <div style="position:relative;cursor:pointer" onclick="toggleNotifPanel()" id="notif-btn">
+                    <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid var(--x-border);display:flex;align-items:center;justify-content:center;font-size:.95rem;transition:background .2s"
+                        onmouseenter="this.style.background='rgba(255,255,255,.1)'"
+                        onmouseleave="this.style.background='rgba(255,255,255,.06)'">🔔</div>
+                    <span id="notif-count"
+                        style="display:none;position:absolute;top:-3px;right:-3px;background:var(--blue);color:white;font-size:.56rem;font-weight:800;padding:2px 5px;border-radius:99px;border:2px solid var(--n950)">0</span>
+                </div>
+                <!-- Notif Panel -->
+                <div id="notif-panel"
+                    style="display:none;position:absolute;top:46px;right:50px;width:290px;background:var(--n900);border:1px solid var(--x-border);border-radius:14px;padding:8px;z-index:600;box-shadow:0 20px 50px rgba(0,0,0,.5);animation:menuPop .25s var(--slow)">
+                    <div
+                        style="padding:7px 12px 9px;font-size:.72rem;font-weight:700;color:var(--t2);letter-spacing:.5px;border-bottom:1px solid var(--x-border);margin-bottom:5px">
+                        NOTIFICATIONS</div>
+                    <div id="notif-list">
+                        <div style="text-align:center;padding:20px;color:var(--t3);font-size:.82rem">No new
+                            notifications</div>
+                    </div>
+                </div>
+                <div class="nav-user" onclick="toggleUserMenu()">
+                    <div class="nav-av" id="nav-av">JD</div>
+                    <div>
+                        <div style="font-size:.82rem;font-weight:600;color:var(--t1)" id="nav-name">User</div>
+                        <div style="font-size:.67rem;color:var(--t3)" id="nav-role">Client</div>
+                    </div>
+                    <span style="color:var(--t3);font-size:.7rem;margin-left:3px">▾</span>
+                </div>
+                <div id="user-menu">
+                    <div style="padding:9px 13px;border-bottom:1px solid var(--x-border);margin-bottom:4px">
+                        <div style="font-weight:600;font-size:.85rem;color:var(--t1)" id="menu-name">User</div>
+                        <div style="font-size:.72rem;color:var(--t3)" id="menu-email">—</div>
+                    </div>
+                    <div class="um-item" onclick="goDashFromMenu();closeUserMenu()" id="menu-dash">🏠 Dashboard</div>
+                    <div class="um-item" onclick="goMarket();closeUserMenu()">🔍 Find a CA</div>
+                    <div class="um-sep"></div>
+                    <div class="um-item danger" onclick="doLogout()">🚪 Log Out</div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ═══ AUTH MODAL ═══ -->
+    <div id="auth-overlay" onclick="authBgClick(event)">
+        <div class="auth-box">
+            <button class="auth-close" onclick="closeAuth()">✕</button>
+            <div class="auth-x">
+                <svg width="30" height="30" viewBox="0 0 300 300" fill="none">
+                    <path
+                        d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66"
+                        fill="white" />
+                </svg>
+            </div>
+            <div id="auth-err" class="auth-err"></div>
+            <div id="auth-msg" class="auth-msg"></div>
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Sign In</button>
+                <button class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">Create Account</button>
+            </div>
+
+            <!-- LOGIN -->
+            <div id="login-form" class="auth-form">
+                <!-- DEMO BUTTONS -->
+                <div
+                    style="background:rgba(29,155,240,.06);border:1px solid rgba(29,155,240,.18);border-radius:12px;padding:14px;margin-bottom:4px">
+                    <div
+                        style="font-size:.68rem;font-weight:700;letter-spacing:.8px;color:var(--blue-l);margin-bottom:10px;text-transform:uppercase">
+                        ⚡ Demo Access</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <button onclick="demoLogin('client')"
+                            style="display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--n800);border:1px solid var(--x-border);border-radius:10px;padding:10px 8px;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif"
+                            onmouseenter="this.style.borderColor='rgba(29,155,240,.5)';this.style.background='rgba(29,155,240,.08)'"
+                            onmouseleave="this.style.borderColor='var(--x-border)';this.style.background='var(--n800)'">
+                            <span style="font-size:1.3rem">👤</span>
+                            <span style="font-size:.8rem;font-weight:700;color:var(--t1)">Demo Client</span>
+                            <span style="font-size:.67rem;color:var(--t3)">View client dashboard</span>
+                        </button>
+                        <button onclick="demoLogin('ca')"
+                            style="display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--n800);border:1px solid var(--x-border);border-radius:10px;padding:10px 8px;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif"
+                            onmouseenter="this.style.borderColor='rgba(255,215,0,.5)';this.style.background='rgba(255,215,0,.06)'"
+                            onmouseleave="this.style.borderColor='var(--x-border)';this.style.background='var(--n800)'">
+                            <span style="font-size:1.3rem">🧑‍💼</span>
+                            <span style="font-size:.8rem;font-weight:700;color:var(--t1)">Demo CA</span>
+                            <span style="font-size:.67rem;color:var(--t3)">View CA portal</span>
+                        </button>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;margin:2px 0">
+                    <div style="flex:1;height:1px;background:var(--x-border)"></div>
+                    <span style="font-size:.72rem;color:var(--t3)">or sign in with your account</span>
+                    <div style="flex:1;height:1px;background:var(--x-border)"></div>
+                </div>
+                <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="li-email"
+                        type="email" placeholder="you@email.com" /></div>
+                <div class="form-group"><label class="form-label">Password</label><input class="form-input" id="li-pass"
+                        type="password" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()" />
+                </div>
+                <button class="btn btn-primary btn-md" id="li-btn" data-label="Sign In" onclick="doLogin()"
+                    style="width:100%;justify-content:center;margin-top:4px">Sign In</button>
+                <div style="text-align:center;font-size:.78rem;color:var(--t3)">No account? <span
+                        style="color:var(--blue-l);cursor:pointer" onclick="switchAuthTab('signup')">Sign up free</span>
+                </div>
+            </div>
+
+            <!-- SIGNUP -->
+            <div id="signup-form" class="auth-form" style="display:none">
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">First Name</label><input class="form-input"
+                            id="su-first" type="text" placeholder="Rahul" /></div>
+                    <div class="form-group"><label class="form-label">Last Name</label><input class="form-input"
+                            id="su-last" type="text" placeholder="Sharma" /></div>
+                </div>
+                <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="su-email"
+                        type="email" placeholder="you@email.com" /></div>
+                <div class="form-group"><label class="form-label">Password</label><input class="form-input" id="su-pass"
+                        type="password" placeholder="Min 6 characters" /></div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Phone</label><input class="form-input"
+                            id="su-phone" type="tel" placeholder="9876543210" /></div>
+                    <div class="form-group"><label class="form-label">City</label><input class="form-input" id="su-city"
+                            type="text" placeholder="Mumbai" /></div>
+                </div>
+                <div class="form-group"><label class="form-label">I am a</label>
+                    <select class="form-select" id="su-role" onchange="toggleCAFields()">
+                        <option value="client">Client (Individual / Business)</option>
+                        <option value="ca">Chartered Accountant (CA)</option>
+                    </select>
+                </div>
+                <div id="ca-fields"
+                    style="display:none;border:1px solid var(--x-border);border-radius:12px;padding:16px;margin-top:2px">
+                    <div
+                        style="font-size:.76rem;font-weight:700;color:var(--blue-l);margin-bottom:12px;letter-spacing:.5px">
+                        CA DETAILS</div>
+                    <div class="form-row">
+                        <div class="form-group"><label class="form-label">CA Membership No.</label><input
+                                class="form-input" id="su-canum" type="text" placeholder="ICAI No." /></div>
+                        <div class="form-group"><label class="form-label">Years Experience</label><input
+                                class="form-input" id="su-exp" type="number" placeholder="5" min="0" /></div>
+                    </div>
+                    <div class="form-group"><label class="form-label">Fee per Filing (₹)</label><input
+                            class="form-input" id="su-fee" type="number" placeholder="5000" min="0" /></div>
+                    <div class="form-group">
+                        <label class="form-label">Specializations</label>
+                        <div class="specs-grid">
+                            <label class="spec-opt"><input type="checkbox" class="spec-check"
+                                    value="Tax Filing & ITR" />ITR Filing</label>
+                            <label class="spec-opt"><input type="checkbox" class="spec-check"
+                                    value="GST Compliance" />GST</label>
+                            <label class="spec-opt"><input type="checkbox" class="spec-check"
+                                    value="Audit & Assurance" />Audit</label>
+                            <label class="spec-opt"><input type="checkbox" class="spec-check"
+                                    value="Business Registration" />Biz Reg</label>
+                            <label class="spec-opt"><input type="checkbox" class="spec-check" value="NRI Taxation" />NRI
+                                Tax</label>
+                            <label class="spec-opt"><input type="checkbox" class="spec-check"
+                                    value="Corporate Tax" />Corp Tax</label>
+                        </div>
+                    </div>
+                    <div class="form-group"><label class="form-label">Bio / About</label><textarea class="form-input"
+                            id="su-bio" rows="2" placeholder="Brief intro about your practice..."></textarea></div>
+                </div>
+                <button class="btn btn-primary btn-md" id="su-btn" data-label="Create Account" onclick="doSignup()"
+                    style="width:100%;justify-content:center;margin-top:4px">Create Account</button>
+                <div style="text-align:center;font-size:.78rem;color:var(--t3)">Have an account? <span
+                        style="color:var(--blue-l);cursor:pointer" onclick="switchAuthTab('login')">Sign in</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MODALS ═══ -->
+    <div class="modal-overlay" id="ca-profile-modal" onclick="if(event.target===this)closeModal('ca-profile-modal')">
+        <div class="modal-box">
+            <div id="ca-profile-content"></div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="analysis-modal" onclick="if(event.target===this)closeModal('analysis-modal')">
+        <div class="modal-box wide">
+            <div id="analysis-content"></div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="client-docs-modal" onclick="if(event.target===this)closeModal('client-docs-modal')">
+        <div class="modal-box">
+            <div id="client-docs-content"></div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="chat-modal" onclick="if(event.target===this)closeModal('chat-modal')">
+        <div class="modal-box">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+                <h3 style="font-family:'Syne',sans-serif;font-weight:700;color:var(--t1)">💬 Chat with <span
+                        id="chat-partner-name"></span></h3>
+                <button class="btn btn-ghost btn-sm" onclick="closeModal('chat-modal')">✕</button>
+            </div>
+            <div class="chat-modal-msgs" id="chat-msgs-wrap"></div>
+            <div style="display:flex;gap:9px">
+                <textarea class="chat-inp" id="chat-inp" placeholder="Type a message..." rows="1"
+                    style="flex:1;border-radius:10px" onkeydown="chatKeydown(event)"></textarea>
+                <button class="btn btn-blue btn-sm" onclick="sendChatMsg()">Send</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="edit-profile-modal"
+        onclick="if(event.target===this)closeModal('edit-profile-modal')">
+        <div class="modal-box">
+            <h3 style="font-family:'Syne',sans-serif;font-weight:700;margin-bottom:18px;color:var(--t1)">✏️ Edit Your
+                Profile</h3>
+            <div class="auth-form">
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Phone</label><input class="form-input"
+                            id="ep-phone" type="tel" /></div>
+                    <div class="form-group"><label class="form-label">City</label><input class="form-input" id="ep-city"
+                            type="text" /></div>
+                </div>
+                <div class="form-group"><label class="form-label">Fee per Filing (₹)</label><input class="form-input"
+                        id="ep-fee" type="number" /></div>
+                <div class="form-group">
+                    <label class="form-label">Specializations</label>
+                    <div class="specs-grid">
+                        <label class="spec-opt"><input type="checkbox" class="spec-edit-check"
+                                value="Tax Filing & ITR" />ITR Filing</label>
+                        <label class="spec-opt"><input type="checkbox" class="spec-edit-check"
+                                value="GST Compliance" />GST</label>
+                        <label class="spec-opt"><input type="checkbox" class="spec-edit-check"
+                                value="Audit & Assurance" />Audit</label>
+                        <label class="spec-opt"><input type="checkbox" class="spec-edit-check"
+                                value="Business Registration" />Biz Reg</label>
+                        <label class="spec-opt"><input type="checkbox" class="spec-edit-check"
+                                value="NRI Taxation" />NRI Tax</label>
+                        <label class="spec-opt"><input type="checkbox" class="spec-edit-check"
+                                value="Corporate Tax" />Corp Tax</label>
+                    </div>
+                </div>
+                <div class="form-group"><label class="form-label">Bio</label><textarea class="form-input" id="ep-bio"
+                        rows="3"></textarea></div>
+                <div style="display:flex;gap:10px">
+                    <button class="btn btn-primary btn-md" onclick="saveCAProfile()">Save Changes</button>
+                    <button class="btn btn-ghost btn-md" onclick="closeModal('edit-profile-modal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ PAGE: HOME ═══ -->
+    <div class="page active" id="page-home">
+        <section class="hero">
+            <canvas id="hero-wave-canvas"></canvas>
+            <div class="hero-badge"><span class="pulse-dot"></span>AI-Powered · Verified CAs · Built for India</div>
+            <h1><span style="display:block">India's Smartest</span><span class="grad-text">CA Platform</span></h1>
+            <p class="hero-sub">Connect with verified Chartered Accountants for ITR, GST, Audit & Business Registration
+                — powered by AI matching, real-time messaging & Claude-powered document intelligence.</p>
+            <div class="hero-cta">
+                <button class="btn btn-primary btn-lg" onclick="openAuth('signup')">Get started free</button>
+                <button class="btn btn-ghost btn-lg" onclick="goMarket()">Browse CAs</button>
+            </div>
+        </section>
+
+        <div class="stats-ribbon">
+            <div class="stat-blk fade-in">
+                <div class="stat-num" data-target="2400" data-sfx="+">0</div>
+                <div class="stat-lbl">Verified CAs</div>
+            </div>
+            <div class="stat-blk fade-in d1">
+                <div class="stat-num" data-target="84" data-sfx="K+">0</div>
+                <div class="stat-lbl">Clients Served</div>
+            </div>
+            <div class="stat-blk fade-in d2">
+                <div class="stat-num" data-target="99" data-sfx="%">0</div>
+                <div class="stat-lbl">Satisfaction</div>
+            </div>
+            <div class="stat-blk fade-in d3">
+                <div class="stat-num" data-target="12" data-sfx="+">0</div>
+                <div class="stat-lbl">Cities Active</div>
+            </div>
+        </div>
+
+        <section class="section">
+            <span class="sec-lbl">Services</span>
+            <h2 class="sec-title fade-in">Everything Tax & Finance,<br>One Platform</h2>
+            <p class="sec-sub fade-in d1">From individual ITR to corporate audits — matched in minutes by AI.</p>
+            <div class="srv-grid">
+                <div class="srv-card fade-in d1"><span class="srv-ic">📊</span>
+                    <div class="srv-title">Tax Filing & ITR</div>
+                    <div class="srv-desc">Accurate ITR for salaried, business, NRI & HUF with maximum deductions and
+                        refund tracking.</div><span class="srv-tag st-b">AI-Assisted</span>
+                </div>
+                <div class="srv-card fade-in d2"><span class="srv-ic">🧾</span>
+                    <div class="srv-title">GST Compliance</div>
+                    <div class="srv-desc">Monthly returns, GSTR reconciliation, ITC claims & registration — fully
+                        managed.</div><span class="srv-tag st-c">Automated</span>
+                </div>
+                <div class="srv-card fade-in d3"><span class="srv-ic">🔍</span>
+                    <div class="srv-title">Audit & Assurance</div>
+                    <div class="srv-desc">Statutory, tax & internal audits with AI fraud detection for complete
+                        financial assurance.</div><span class="srv-tag st-g">Fraud-Detect</span>
+                </div>
+                <div class="srv-card fade-in d4"><span class="srv-ic">🏢</span>
+                    <div class="srv-title">Business Registration</div>
+                    <div class="srv-desc">Pvt Ltd, LLP, OPC incorporation — end-to-end with MCA filings and compliance
+                        setup.</div><span class="srv-tag st-gr">Fast Track</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" style="border-top:1px solid var(--x-border)">
+            <span class="sec-lbl">AI Intelligence</span>
+            <h2 class="sec-title fade-in">Four AI Engines<br>Working For You</h2>
+            <div class="ai-grid">
+                <div class="ai-card fade-in d1">
+                    <div class="ai-stripe as1"></div>
+                    <div class="ai-ic">🎯</div>
+                    <div class="ai-algo">ALGO: Weighted Cosine Similarity + Collaborative Filtering</div>
+                    <h3>Smart CA Matching</h3>
+                    <p>Score = 0.35×Specialization + 0.25×Rating + 0.25×Experience + 0.15×Price. Real CAs, real
+                        rankings.</p><span class="ai-pill pill-b">⚡ Live from Firebase</span>
+                </div>
+                <div class="ai-card fade-in d2">
+                    <div class="ai-stripe as2"></div>
+                    <div class="ai-ic">📄</div>
+                    <div class="ai-algo">ALGO: OCR.space API + Claude Vision Analysis</div>
+                    <h3>Document Intelligence</h3>
+                    <p>Upload any document. OCR.space extracts text, Claude analyzes type, flags missing fields &
+                        updates your risk score live.</p><span class="ai-pill pill-g">📎 Real OCR + AI</span>
+                </div>
+                <div class="ai-card fade-in d3">
+                    <div class="ai-stripe as3"></div>
+                    <div class="ai-ic">🤖</div>
+                    <div class="ai-algo">ALGO: RAG + Intent Classification (Claude Sonnet)</div>
+                    <h3>AI Tax Assistant</h3>
+                    <p>Live Claude Sonnet chatbot trained on Indian tax law — GST rates, ITR deadlines, 80C tips,
+                        document checklists, all in real-time.</p><span class="ai-pill pill-c">💬 Live Claude API</span>
+                </div>
+                <div class="ai-card fade-in d4">
+                    <div class="ai-stripe as4"></div>
+                    <div class="ai-ic">🛡️</div>
+                    <div class="ai-algo">ALGO: Claude Anomaly Detection + Firestore sync</div>
+                    <h3>Fraud Risk Score</h3>
+                    <p>Claude analyzes every uploaded document and updates your live Risk Score in Firestore. CAs see
+                        client risk before filing.</p><span class="ai-pill pill-r">🔴 Real-time score</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" style="border-top:1px solid var(--x-border)">
+            <span class="sec-lbl">How It Works</span>
+            <h2 class="sec-title fade-in">From Sign-Up to Filed<br>in 4 Steps</h2>
+            <div class="steps-row fade-in d1">
+                <div class="step-item">
+                    <div class="step-circle">01</div>
+                    <h4>Create Profile</h4>
+                    <p>Sign up as Client or CA — your real profile goes live instantly</p>
+                </div>
+                <div class="step-item">
+                    <div class="step-circle">02</div>
+                    <h4>AI Matches</h4>
+                    <p>Smart Score ranks real registered CAs for your exact needs</p>
+                </div>
+                <div class="step-item">
+                    <div class="step-circle">03</div>
+                    <h4>Upload & Analyze</h4>
+                    <p>OCR + Claude analyzes your docs and updates risk score live</p>
+                </div>
+                <div class="step-item">
+                    <div class="step-circle">04</div>
+                    <h4>Message & File</h4>
+                    <p>Real-time messaging with your CA until filing is complete</p>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <div class="ft-grid">
+                <div class="ft-brand">
+                    <div style="display:flex;align-items:center;gap:9px">
+                        <svg width="24" height="24" viewBox="0 0 300 300" fill="none">
+                            <path
+                                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66"
+                                fill="white" />
+                        </svg>
+                        <span
+                            style="font-family:'Syne',sans-serif;font-size:1.15rem;font-weight:800;color:var(--t1)">LedgerX</span>
+                    </div>
+                    <p>India's most intelligent CA marketplace — real CAs, real AI, real results.</p>
+                </div>
+                <div class="ft-col">
+                    <h5>Services</h5><a>ITR Filing</a><a>GST Returns</a><a>Audit</a><a>Business Setup</a>
+                </div>
+                <div class="ft-col">
+                    <h5>Platform</h5><a onclick="goMarket()">Find a CA</a><a onclick="openAuth('signup')">CA Sign
+                        Up</a><a onclick="toggleChatbot()">AI Assistant</a>
+                </div>
+                <div class="ft-col">
+                    <h5>Company</h5><a>About Us</a><a>Privacy</a><a>Terms</a>
+                </div>
+            </div>
+            <div class="ft-bottom"><span>© 2025 LedgerX. Built for India.</span><span>Firebase + Claude AI</span></div>
+        </footer>
+    </div>
+
+    <!-- ═══ PAGE: MARKETPLACE ═══ -->
+    <div class="page" id="page-market">
+        <div class="mkt-wrap">
+            <div class="mkt-top fade-in">
+                <h2>Find Your Perfect CA</h2>
+                <p>Real Chartered Accountants — AI-ranked by Smart Score</p>
+                <div class="search-row">
+                    <input class="s-input" id="mkt-search" placeholder="🔍 Search by name, specialization..."
+                        oninput="filterMarketplace()" />
+                    <select class="s-select" id="mkt-spec" onchange="filterMarketplace()">
+                        <option value="">All Services</option>
+                        <option>Tax Filing &amp; ITR</option>
+                        <option>GST Compliance</option>
+                        <option>Audit &amp; Assurance</option>
+                        <option>Business Registration</option>
+                        <option>NRI Taxation</option>
+                    </select>
+                    <input class="s-input" id="mkt-city" placeholder="City..." oninput="filterMarketplace()"
+                        style="max-width:130px;border-radius:99px" />
+                    <button class="btn btn-blue btn-md" onclick="filterMarketplace()">AI Match</button>
+                </div>
+            </div>
+            <div class="amb-banner fade-in d1">
+                <div class="amb-left">
+                    <div class="amb-ic">🎯</div>
+                    <div>
+                        <h4
+                            style="font-family:'Syne',sans-serif;font-size:.93rem;font-weight:700;margin-bottom:2px;color:var(--t1)">
+                            AI Smart Match Active</h4>
+                        <p style="font-size:.77rem;color:var(--t2)">Specialization (35%) · Rating (25%) · Experience
+                            (25%) · Price (15%)</p>
+                    </div>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="openAuth('signup')">Register as CA</button>
+            </div>
+            <div class="ca-grid" id="ca-grid">
+                <div class="empty-state" style="grid-column:1/-1;background:var(--n900)">
+                    <div class="empty-icon">⏳</div>
+                    <h3>Loading CAs...</h3>
+                    <p>Fetching from database</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ PAGE: CLIENT DASHBOARD ═══ -->
+    <div class="page" id="page-client-dash">
+        <div class="dash-shell">
+            <div class="sidebar">
+                <div style="margin-bottom:12px">
+                    <div class="sb-lbl">Overview</div>
+                    <div class="sb-item on" onclick="window.scrollTo({top:0, behavior:'smooth'})"><span
+                            class="sb-ic">🏠</span>Dashboard</div>
+                    <div class="sb-item" onclick="goMarket()"><span class="sb-ic">🔍</span>Find a CA</div>
+                </div>
+                <div style="margin-bottom:12px">
+                    <div class="sb-lbl">My Work</div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cd-bookings').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">📊</span>Filings</div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cd-messages').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">💬</span>Messages <span class="sb-badge" id="cd-msg-badge"
+                            style="display:none">0</span></div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cd-deadlines').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">🔔</span>Deadlines</div>
+                </div>
+                <div>
+                    <div class="sb-lbl">Tools</div>
+                    <div class="sb-item" onclick="toggleChatbot()"><span class="sb-ic">🤖</span>AI TaxBot</div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cd-risk-thumb').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">🛡️</span>Risk Score</div>
+                    <div class="sb-item" onclick="doLogout()"><span class="sb-ic">🚪</span>Log Out</div>
+                </div>
+            </div>
+            <div class="dash-main">
+                <div class="dash-hdr">
+                    <h2 id="cd-greeting">Good morning 👋</h2>
+                    <p id="cd-sub">Your financial overview</p>
+                </div>
+                <div class="wg">
+                    <div class="widget w1">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">👤</div>
+                        <div class="widget-val" id="cd-w-bookings">—</div>
+                        <div class="widget-lbl">CA Bookings</div>
+                    </div>
+                    <div class="widget w2">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">📄</div>
+                        <div class="widget-val" id="cd-w-docs">—</div>
+                        <div class="widget-lbl">Documents</div>
+                    </div>
+                    <div class="widget w3">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">⏰</div>
+                        <div class="widget-val" id="cd-w-itr">Jul 31</div>
+                        <div class="widget-lbl">ITR Deadline</div>
+                        <div class="widget-ch" id="cd-w-itr-days" style="color:var(--red)">—</div>
+                    </div>
+                    <div class="widget w4">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">🛡️</div>
+                        <div class="widget-val" id="cd-w-risk">—</div>
+                        <div class="widget-lbl">Risk Score</div>
+                    </div>
+                </div>
+                <div class="rev-card">
+                    <div class="rev-hdr">
+                        <div>
+                            <h3>📈 Document Activity</h3>
+                            <p>Documents uploaded per month</p>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="rev-total" id="cd-rev-total">0 docs</div>
+                            <div class="rev-change" id="cd-rev-change" style="color:var(--t3)">Upload documents to see
+                                trend</div>
+                        </div>
+                    </div>
+                    <div id="cd-chart-wrap" style="min-height:80px">
+                        <div class="empty-state" style="padding:24px 0">
+                            <div class="empty-icon" style="font-size:1.8rem">📉</div>
+                            <h3 style="font-size:.95rem">No data yet</h3>
+                            <p>Upload documents to see your activity chart</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="dash-row">
+                    <div class="dash-card">
+                        <h3>👤 My CA Bookings</h3>
+                        <div id="cd-bookings">
+                            <div class="empty-state" style="padding:24px 0">
+                                <div class="empty-icon">👤</div>
+                                <h3>No CA booked</h3>
+                                <p>Browse the marketplace to find your CA</p>
+                            </div>
+                        </div>
+                        <button class="btn btn-blue btn-sm" onclick="goMarket()"
+                            style="margin-top:14px;width:100%;justify-content:center">Find a CA</button>
+                    </div>
+                    <div class="dash-card" id="cd-messages">
+                        <h3>💬 Messages</h3>
+                        <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+                            <div class="empty-state" style="padding:24px 0">
+                                <div class="empty-icon">📫</div>
+                                <h3>No messages yet</h3>
+                                <p>When you book a CA, their messages will appear here.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dash-card">
+                        <h3>🔔 Tax Deadlines</h3>
+                        <div id="cd-deadlines">
+                            <div class="dl-item">
+                                <div class="dl-l">
+                                    <div class="dl-ball db-r"></div>
+                                    <div>
+                                        <div class="dl-name">ITR Filing (AY 2025-26)</div>
+                                        <div class="dl-date">July 31, 2025</div>
+                                    </div>
+                                </div><span class="dl-bdg dlr" id="dl-itr">—</span>
+                            </div>
+                            <div class="dl-item">
+                                <div class="dl-l">
+                                    <div class="dl-ball db-o"></div>
+                                    <div>
+                                        <div class="dl-name">GSTR-3B (Monthly)</div>
+                                        <div class="dl-date">20th of every month</div>
+                                    </div>
+                                </div><span class="dl-bdg dlo" id="dl-gst">—</span>
+                            </div>
+                            <div class="dl-item">
+                                <div class="dl-l">
+                                    <div class="dl-ball db-o"></div>
+                                    <div>
+                                        <div class="dl-name">Advance Tax Q2</div>
+                                        <div class="dl-date">Sept 15, 2025</div>
+                                    </div>
+                                </div><span class="dl-bdg dlo" id="dl-adv">—</span>
+                            </div>
+                            <div class="dl-item">
+                                <div class="dl-l">
+                                    <div class="dl-ball db-o"></div>
+                                    <div>
+                                        <div class="dl-name">TDS Return Q1</div>
+                                        <div class="dl-date">July 31, 2025</div>
+                                    </div>
+                                </div><span class="dl-bdg dlo" id="dl-tds">—</span>
+                            </div>
+                            <div class="dl-item">
+                                <div class="dl-l">
+                                    <div class="dl-ball db-g"></div>
+                                    <div>
+                                        <div class="dl-name">ROC Annual Filing</div>
+                                        <div class="dl-date">Sept 30, 2025</div>
+                                    </div>
+                                </div><span class="dl-bdg dlg" id="dl-roc">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="dash-row">
+                    <div class="dash-card">
+                        <h3>🛡️ AI Fraud Risk Score</h3>
+                        <div class="risk-scale"><span style="color:var(--green)">Low</span><span
+                                style="color:var(--gold)">Medium</span><span style="color:var(--red)">High</span></div>
+                        <div class="risk-bg">
+                            <div class="risk-grad"></div>
+                            <div class="risk-thumb" id="cd-risk-thumb" style="left:0%"></div>
+                        </div>
+                        <div style="font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;color:var(--green);margin-top:12px"
+                            id="cd-risk-num">—</div>
+                        <div style="font-size:.71rem;color:var(--t3)">Claude AI Analysis</div>
+                        <div style="margin-top:10px;font-size:.81rem;color:var(--t2);line-height:1.7"
+                            id="cd-risk-reason">Upload documents to generate your risk score.</div>
+                    </div>
+                    <div class="dash-card">
+                        <h3>📎 Document Upload & AI Analysis</h3>
+                        <div class="doc-drop" onclick="document.getElementById('file-input').click()">
+                            <div class="di">📤</div>
+                            <p style="font-size:.85rem;color:var(--t1)"><strong>Click to upload document</strong></p>
+                            <p style="font-size:.74rem;margin-top:5px;color:var(--t3)">Form 16 · Bank Statement · GST
+                                Invoice · PAN · ITR</p>
+                        </div>
+                        <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" style="display:none"
+                            onchange="handleFileUpload(this)" />
+                        <div id="upload-status"></div>
+                        <div id="cd-docs" style="margin-top:12px"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ PAGE: CA DASHBOARD ═══ -->
+    <div class="page" id="page-ca-dash">
+        <div class="dash-shell">
+            <div class="sidebar">
+                <div style="margin-bottom:12px">
+                    <div class="sb-lbl">CA Portal</div>
+                    <div class="sb-item on" onclick="window.scrollTo({top:0, behavior:'smooth'})"><span
+                            class="sb-ic">🏠</span>Overview</div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cad-clients').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">👥</span>My Clients <span class="sb-badge" id="cad-pending-badge"
+                            style="display:none">0</span></div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cad-messages').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">💬</span>Messages</div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cad-docs').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">📋</span>Tasks</div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cad-chart-wrap').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">💰</span>Revenue</div>
+                </div>
+                <div style="margin-bottom:12px">
+                    <div class="sb-lbl">Tools</div>
+                    <div class="sb-item" onclick="openEditProfile()"><span class="sb-ic">✏️</span>Edit Profile</div>
+                    <div class="sb-item" onclick="toggleChatbot()"><span class="sb-ic">🤖</span>AI Assistant</div>
+                    <div class="sb-item"
+                        onclick="document.getElementById('cad-greeting').scrollIntoView({behavior:'smooth'})"><span
+                            class="sb-ic">⭐</span>Reviews</div>
+                </div>
+                <div>
+                    <div class="sb-lbl">Account</div>
+                    <div class="sb-item" onclick="doLogout()"><span class="sb-ic">🚪</span>Log Out</div>
+                </div>
+            </div>
+            <div class="dash-main">
+                <div class="dash-hdr">
+                    <h2 id="cad-greeting">Welcome ✨</h2>
+                    <p id="cad-sub">Your CA practice overview</p>
+                </div>
+                <div class="wg">
+                    <div class="widget w1">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">👥</div>
+                        <div class="widget-val" id="cad-w-clients">0</div>
+                        <div class="widget-lbl">Active Clients</div>
+                    </div>
+                    <div class="widget w2">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">💰</div>
+                        <div class="widget-val" id="cad-w-rating">—</div>
+                        <div class="widget-lbl">Avg Rating</div>
+                    </div>
+                    <div class="widget w3">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">⭐</div>
+                        <div class="widget-val" id="cad-w-reviews">0</div>
+                        <div class="widget-lbl">Reviews</div>
+                    </div>
+                    <div class="widget w4">
+                        <div class="wglow"></div>
+                        <div class="widget-ic">📅</div>
+                        <div class="widget-val" id="cad-w-exp">0 yrs</div>
+                        <div class="widget-lbl">Experience</div>
+                    </div>
+                </div>
+                <div class="rev-card">
+                    <div class="rev-hdr">
+                        <div>
+                            <h3>💰 Monthly Revenue</h3>
+                            <p>Earnings from client bookings</p>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="rev-total" id="cad-rev-total">₹0</div>
+                            <div class="rev-change" id="cad-rev-change" style="color:var(--t3)">No billing data yet
+                            </div>
+                        </div>
+                    </div>
+                    <div id="cad-chart-wrap" style="min-height:80px">
+                        <div class="empty-state" style="padding:24px 0">
+                            <div class="empty-icon" style="font-size:1.8rem">📊</div>
+                            <h3 style="font-size:.95rem">Revenue chart</h3>
+                            <p>Appears as clients book you</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="dash-card-solo" id="cad-messages">
+                    <h3>💬 Messages</h3>
+                    <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+                        <div class="empty-state" style="padding:24px 0">
+                            <div class="empty-icon">📫</div>
+                            <h3>Inbox Empty</h3>
+                            <p>Messages from your clients will appear here.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="dash-card-solo">
+                    <h3>👥 My Clients</h3>
+                    <div id="cad-clients">
+                        <div class="empty-state" style="padding:24px 0">
+                            <div class="empty-icon">👥</div>
+                            <h3>No clients yet</h3>
+                            <p>Clients who book you appear here</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="dash-card-solo">
+                    <h3>📂 Client Documents</h3>
+                    <div id="cad-docs">
+                        <div class="empty-state" style="padding:24px 0">
+                            <div class="empty-icon">📂</div>
+                            <h3>No documents</h3>
+                            <p>Client uploads appear here</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ TAXBOT CHATBOT ═══ -->
+    <button class="chat-fab" onclick="toggleChatbot()">
+        <span style="font-size:1.3rem">🤖</span>
+        <span class="fab-dot"></span>
+    </button>
+    <div class="chatbox" id="chatbox">
+        <div class="chat-hd">
+            <div class="chat-hd-av">🤖</div>
+            <div class="chat-hd-info">
+                <h4>TaxBot AI</h4>
+                <p>● Online · Claude Sonnet</p>
+            </div>
+            <button class="chat-hd-close" onclick="toggleChatbot()">✕</button>
+        </div>
+        <div class="chat-msgs-inner" id="taxbot-msgs">
+            <div class="cmsg cmsg-ai">
+                <div class="cbubble">Hi! I'm TaxBot, your AI tax assistant. I can help with GST queries, ITR deadlines,
+                    document checklists and tax saving tips. What do you need? 🙌</div>
+                <div class="ctime">Now</div>
+            </div>
+        </div>
+        <div class="chat-chips">
+            <span class="cchip" onclick="quickAsk('What documents do I need for ITR filing?')">📎 ITR Docs</span>
+            <span class="cchip" onclick="quickAsk('GST filing deadlines 2025?')">📅 GST Deadlines</span>
+            <span class="cchip" onclick="quickAsk('How to save tax under Section 80C?')">💰 80C Tips</span>
+            <span class="cchip" onclick="quickAsk('GST rate on software services?')">🧾 GST Rate</span>
+        </div>
+        <div class="chat-inp-row">
+            <textarea class="chat-inp" id="taxbot-inp" placeholder="Ask about GST, ITR, taxes..." rows="1"
+                onkeydown="taxbotKeydown(event)"></textarea>
+            <button class="chat-send" onclick="sendTaxbotMsg()">➤</button>
+        </div>
+    </div>
+
+    <!-- ═══ CURSOR + ANIMATIONS JS ═══ -->
+    <script>
+        (function () {
+            const cur = document.getElementById('lx-cur'), ring = document.getElementById('lx-ring');
+            let mx = 0, my = 0, rx = 0, ry = 0, hovering = false;
+
+            document.addEventListener('mousemove', e => {
+                mx = e.clientX; my = e.clientY;
+                cur.style.left = mx + 'px'; cur.style.top = my + 'px';
+            });
+
+            (function raf() {
+                const ease = hovering ? .08 : .13;
+                rx += (mx - rx) * ease; ry += (my - ry) * ease;
+                ring.style.left = rx + 'px'; ring.style.top = ry + 'px';
+                requestAnimationFrame(raf);
+            })();
+
+            document.addEventListener('click', e => {
+                const r = document.createElement('div');
+                r.className = 'cur-ripple';
+                r.style.cssText = `left:${e.clientX}px;top:${e.clientY}px;`;
+                document.body.appendChild(r);
+                setTimeout(() => r.remove(), 700);
+            });
+
+            document.addEventListener('mousedown', () => document.body.classList.add('cur-click'));
+            document.addEventListener('mouseup', () => document.body.classList.remove('cur-click'));
+            document.addEventListener('mouseleave', () => { cur.style.opacity = '0'; ring.style.opacity = '0'; });
+            document.addEventListener('mouseenter', () => { cur.style.opacity = '1'; ring.style.opacity = '1'; });
+
+            function bindHover(el) {
+                if (el._ch) return; el._ch = true;
+                el.addEventListener('mouseenter', () => { hovering = true; document.body.classList.add('cur-hover'); });
+                el.addEventListener('mouseleave', () => { hovering = false; document.body.classList.remove('cur-hover'); });
+            }
+            function bindAll() { document.querySelectorAll('button,a,.srv-card,.ca-card,.ai-card,.cchip,.sb-item,.nav-user,.widget,.auth-tab,.spec-opt,.doc-drop,.stat-blk').forEach(bindHover); }
+            bindAll();
+            new MutationObserver(bindAll).observe(document.body, { childList: true, subtree: true });
+        })();
+
+        // Scroll animations
+        const sObs = new IntersectionObserver(e => e.forEach(x => { if (x.isIntersecting) x.target.classList.add('show'); }), { threshold: .08 });
+        document.querySelectorAll('.fade-in').forEach(e => sObs.observe(e));
+
+        // Counters
+        const cObs = new IntersectionObserver(entries => entries.forEach(e => {
+            if (!e.isIntersecting) return;
+            const t = +e.target.dataset.target, sfx = e.target.dataset.sfx || '';
+            let c = 0; const step = t / 70;
+            const iv = setInterval(() => { c = Math.min(c + step, t); e.target.textContent = (t >= 1000 ? (c / 1000).toFixed(1) + 'K+' : Math.floor(c)) + sfx; if (c >= t) clearInterval(iv); }, 22);
+            cObs.unobserve(e.target);
+        }), { threshold: .5 });
+        document.querySelectorAll('[data-target]').forEach(e => cObs.observe(e));
+    </script>
+
+    <!-- ═══ WAVY HERO BACKGROUND ═══ -->
+    <script type="module">
+        // Simplex noise (inlined, no CDN needed — pure JS implementation)
+        // 3D Simplex Noise based on Stefan Gustavson's implementation
+        (function () {
+            // --- Minimal 3D simplex noise ---
+            const F3 = 1 / 3, G3 = 1 / 6;
+            const grad3 = [[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0], [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1], [0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1]];
+            let perm = new Uint8Array(512), permMod12 = new Uint8Array(512);
+            const p = new Uint8Array(256);
+            for (let i = 0; i < 256; i++) p[i] = i;
+            for (let i = 255; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[p[i], p[j]] = [p[j], p[i]]; }
+            for (let i = 0; i < 512; i++) { perm[i] = p[i & 255]; permMod12[i] = perm[i] % 12; }
+            function dot3(g, x, y, z) { return g[0] * x + g[1] * y + g[2] * z; }
+            function noise3(xin, yin, zin) {
+                let s = (xin + yin + zin) * F3, i = Math.floor(xin + s), j = Math.floor(yin + s), k = Math.floor(zin + s);
+                let t = (i + j + k) * G3, X0 = i - t, Y0 = j - t, Z0 = k - t, x0 = xin - X0, y0 = yin - Y0, z0 = zin - Z0;
+                let i1, j1, k1, i2, j2, k2;
+                if (x0 >= y0) { if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; } else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; } else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; } }
+                else { if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; } else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; } else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; } }
+                let x1 = x0 - i1 + G3, y1 = y0 - j1 + G3, z1 = z0 - k1 + G3;
+                let x2 = x0 - i2 + 2 * G3, y2 = y0 - j2 + 2 * G3, z2 = z0 - k2 + 2 * G3;
+                let x3 = x0 - 1 + 3 * G3, y3 = y0 - 1 + 3 * G3, z3 = z0 - 1 + 3 * G3;
+                let ii = i & 255, jj = j & 255, kk = k & 255;
+                let n0 = 0, n1 = 0, n2 = 0, n3 = 0;
+                let t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0; if (t0 >= 0) { t0 *= t0; n0 = t0 * t0 * dot3(grad3[permMod12[ii + perm[jj + perm[kk]]]], x0, y0, z0); }
+                let t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1; if (t1 >= 0) { t1 *= t1; n1 = t1 * t1 * dot3(grad3[permMod12[ii + i1 + perm[jj + j1 + perm[kk + k1]]]], x1, y1, z1); }
+                let t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2; if (t2 >= 0) { t2 *= t2; n2 = t2 * t2 * dot3(grad3[permMod12[ii + i2 + perm[jj + j2 + perm[kk + k2]]]], x2, y2, z2); }
+                let t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3; if (t3 >= 0) { t3 *= t3; n3 = t3 * t3 * dot3(grad3[permMod12[ii + 1 + perm[jj + 1 + perm[kk + 1]]]], x3, y3, z3); }
+                return 32 * (n0 + n1 + n2 + n3);
+            }
+            window._sNoise3 = noise3;
+        })();
+
+        // ─── Wavy canvas animation ───
+        const canvas = document.getElementById('hero-wave-canvas');
+        const ctx = canvas.getContext('2d');
+        let animId, nt = 0;
+
+        const waveColors = [
+            '#1d9bf0', // X blue
+            '#60c4ff', // light blue
+            '#00d4e8', // cyan
+            '#818cf8', // indigo
+            '#c084fc', // purple
+        ];
+
+        function resize() {
+            const hero = canvas.parentElement;
+            canvas.width = hero.offsetWidth;
+            canvas.height = hero.offsetHeight;
+            ctx.filter = 'blur(10px)';
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        function drawWaves() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(10,10,10,0.92)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            nt += 0.0018;
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.lineWidth = 48;
+                ctx.strokeStyle = waveColors[i % waveColors.length];
+                ctx.globalAlpha = 0.45;
+                for (let x = 0; x < canvas.width; x += 4) {
+                    const y = window._sNoise3(x / 800, 0.3 * i, nt) * 110;
+                    ctx.lineTo(x, y + canvas.height * 0.5);
+                }
+                ctx.stroke();
+                ctx.closePath();
+            }
+            ctx.globalAlpha = 1;
+            animId = requestAnimationFrame(drawWaves);
+        }
+        drawWaves();
+
+        // Stop animation when hero is off screen (perf)
+        const heroEl = canvas.parentElement;
+        const waveObs = new IntersectionObserver(e => {
+            if (e[0].isIntersecting) { if (!animId) drawWaves(); }
+            else { cancelAnimationFrame(animId); animId = null; }
+        }, { threshold: 0 });
+        waveObs.observe(heroEl);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,36 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.pnpm-debug.log
+
+# Firebase
+.firebase/
+*-debug.log
+.runtimeconfig.json
+firebase-debug.log
+firebase-debug.*.log
+# (Exception if you want to track changes to rules/config)
+#!firestore.rules
+#!storage.rules
+#!firebase.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project Specific
+dist/
+.tmp/
