@@ -190,8 +190,29 @@
             toast('Logged out successfully', 'info');
         };
         window.goMarket = function () { showPage("market"); };
-        window.goClientDash = function () { showPage("client-dash"); };
-        window.goCADash = function () { showPage("ca-dash"); };
+        window.goClientDash = function () {
+            if (window._isDemoMode) {
+                showPage("client-dash");
+            } else if (window.currentUser && window.currentProfile) {
+                showPage("client-dash");
+                // The module script will handle loading data via onAuthStateChanged or manual calls
+            } else {
+                openAuth("login");
+            }
+        };
+        window.goCADash = function () {
+            if (window._isDemoMode) {
+                showPage("ca-dash");
+            } else if (window.currentUser && window.currentProfile) {
+                if (window.currentProfile.role === "ca") {
+                    showPage("ca-dash");
+                } else {
+                    toast("Access denied: You are not a CA.", "error");
+                }
+            } else {
+                openAuth("login");
+            }
+        };
         window.loadMarketplace = function () { showPage("market"); };
         window.bookCA = function () { openAuth("login"); };
         window.sendTaxbotMsg = function () {
@@ -233,8 +254,8 @@
         const { getStorage, ref, uploadBytes, getDownloadURL } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js");
 
         // ─── aliases to global UI functions ───
-        const el = (id) => document.getElementById(id);
-        const v = (id) => (el(id)?.value || "").trim();
+        const _el = (id) => document.getElementById(id);
+        const _v = (id) => (_el(id)?.value || "").trim();
         const toast = (msg, type) => window.toast(msg, type);
         const openModal = (id) => window.openModal(id);
         const closeModal = (id) => window.closeModal(id);
@@ -280,8 +301,8 @@
                     const activePage = document.querySelector(".page.active");
                     const activeId = activePage ? activePage.id : "";
                     if (!activeId || activeId === "page-home") {
-                        if (currentProfile.role === "ca") goCADash();
-                        else goClientDash();
+                        if (currentProfile.role === "ca") window.goCADash();
+                        else window.goClientDash();
                     }
                 }
             } else {
@@ -461,6 +482,7 @@
         };
 
         window.goClientDash = async function () {
+            if (window._isDemoMode) { showPage("client-dash"); return; }
             if (!currentUser) { openAuth("login"); return; }
             showPage("client-dash"); loadClientDash();
         };
@@ -531,7 +553,9 @@
         };
 
         window.goCADash = async function () {
+            if (window._isDemoMode) { showPage("ca-dash"); return; }
             if (!currentUser) { openAuth("login"); return; }
+            if (currentProfile?.role !== "ca") { toast("Access denied.", "error"); return; }
             showPage("ca-dash"); loadCADash();
         };
 
@@ -743,12 +767,8 @@
         function emptyState(ic, h, p) { return `<div class="empty-state"><div class="empty-icon">${ic}</div><h3>${h}</h3><p>${p}</p></div>`; }
 
         // Override placeholders with real Firebase functions
-        window.goMarket = function () { loadMarketplace(); };
-        window.goClientDash = function () { if (window._isDemoMode) { showPage("client-dash"); return; } goClientDash(); };
-        window.goCADash = function () { if (window._isDemoMode) { showPage("ca-dash"); return; } goCADash(); };
         window.goDashFromMenu = function () {
-            if (window._isDemoMode) { if (currentProfile?.role === "ca") showPage("ca-dash"); else showPage("client-dash"); return; }
-            if (currentProfile?.role === "ca") goCADash(); else goClientDash();
+            if (currentProfile?.role === "ca") window.goCADash(); else window.goClientDash();
         };
         window.chatKeydown = function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMsg(); } };
         window.taxbotKeydown = function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTaxbotMsg(); } };
