@@ -254,10 +254,10 @@
 
         // OCR.space — get free key at https://ocr.space/ocrapi ("helloworld" = free tier, 25k req/month)
         const OCR_API_KEY = "helloworld";
-        // Google Gemini API — get free key at https://aistudio.google.com/app/apikey
-        const GEMINI_API_KEY = "AIzaSyAIOs7-5sdMlNjPbPMscErSisYKwkrq2KY";
-        const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-        // Gemini is integrated via direct REST API - proxy fallback remains for other services if needed
+        // Groq API — fast, free tier available at https://console.groq.com/keys
+        const GROQ_API_KEY = "PASTE_YOUR_GROQ_KEY_HERE";
+        const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+        const GROQ_MODEL = "llama-3.1-8b-instant"; // Fast and efficient for chat and analysis
         const CLAUDE_FN_URL = "https://us-central1-ledgerx-47da3.cloudfunctions.net/askClaude";
 
         const app = initializeApp(firebaseConfig);
@@ -677,13 +677,14 @@
                 uploadBtn.textContent = "🤖 AI Analyzing...";
                 let aiAnalysis = "";
                 try {
-                    const geminiRes = await fetch(GEMINI_URL, {
+                    const groqRes = await fetch(GROQ_URL, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + GROQ_API_KEY },
                         body: JSON.stringify({
-                            contents: [{
-                                parts: [{
-                                    text: `You are an expert Indian CA document analyzer. Analyze the extracted OCR text from a financial document. Provide:
+                            model: GROQ_MODEL,
+                            messages: [{
+                                role: "user",
+                                content: `You are an expert Indian CA document analyzer. Analyze the extracted OCR text from a financial document. Provide:
 1. Document Type
 2. Key Extracted Info (PAN, dates, amounts, names, GSTIN)
 3. Completeness Check
@@ -691,12 +692,11 @@
 5. Any anomalies or flags
 
 Be concise and structured. Use bullet points. Analyze this document text:\n\n${ocrText.slice(0, 3000)}`
-                                }]
                             }]
                         })
                     });
-                    const gd = await geminiRes.json();
-                    aiAnalysis = gd.candidates?.[0]?.content?.parts?.[0]?.text || "Analysis unavailable.";
+                    const gd = await groqRes.json();
+                    aiAnalysis = gd.choices?.[0]?.message?.content || "Analysis unavailable.";
                 } catch (cErr) { aiAnalysis = "[AI analysis failed: " + cErr.message + "]"; }
                 const docRef = await addDoc(collection(db, "documents"), { ownerId: currentUser.uid, ownerName: currentProfile.displayName, fileName: file.name, fileSize: formatBytes(file.size), fileURL, ocrText, aiAnalysis, analyzed: true, createdAt: serverTimestamp() });
                 updateRiskScore(ocrText, aiAnalysis);
@@ -709,25 +709,25 @@ Be concise and structured. Use bullet points. Analyze this document text:\n\n${o
 
         async function updateRiskScore(ocrText, aiAnalysis) {
             try {
-                const res = await fetch(GEMINI_URL, {
+                const res = await fetch(GROQ_URL, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + GROQ_API_KEY },
                     body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: `You are a tax fraud detection AI. Analyze the analysis and text provided. Output ONLY valid JSON: {"score": <0-100>, "level": "Low|Medium|High", "reason": "<one line>"}
+                        model: GROQ_MODEL,
+                        messages: [{
+                            role: "user",
+                            content: `You are a tax fraud detection AI. Analyze the analysis and text provided. Output ONLY valid JSON: {"score": <0-100>, "level": "Low|Medium|High", "reason": "<one line>"}
 
 Analysis:
 ${aiAnalysis}
 
 OCR text sample:
 ${ocrText.slice(0, 500)}`
-                            }]
                         }]
                     })
                 });
                 const d = await res.json();
-                const txt = d.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+                const txt = d.choices?.[0]?.message?.content || "{}";
                 const clean = txt.replace(/```json|```/g, "").trim();
                 const risk = JSON.parse(clean);
                 if (risk.score !== undefined) {
@@ -747,25 +747,28 @@ ${ocrText.slice(0, 500)}`
             tp.innerHTML = '<div class="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div>';
             msgs.appendChild(tp); msgs.scrollTop = msgs.scrollHeight;
             try {
-                const res = await fetch(GEMINI_URL, {
+                const res = await fetch(GROQ_URL, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + GROQ_API_KEY },
                     body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: `You are TaxBot, an expert AI tax assistant for LedgerX — India's CA marketplace. You specialize in ITR filing, GST compliance, TDS/TCS, advance tax, capital gains, NRI taxation, business registration, and FY 2024-25 compliance deadlines. Keep answers concise, accurate, and well-structured. Use numbered steps for procedures. Always be helpful and specific to Indian tax law. User Query: ${txt}`
-                            }]
+                        model: GROQ_MODEL,
+                        messages: [{
+                            role: "system",
+                            content: "You are TaxBot, an expert AI tax assistant for LedgerX — India's CA marketplace. You specialize in ITR filing, GST compliance, TDS/TCS, advance tax, capital gains, NRI taxation, business registration, and FY 2024-25 compliance deadlines. Keep answers concise, accurate, and well-structured. Use numbered steps for procedures. Always be helpful and specific to Indian tax law."
+                        }, {
+                            role: "user",
+                            content: txt
                         }]
                     })
                 });
                 const d = await res.json(); el(tid)?.remove();
                 if (d.error) {
-                    console.error("Gemini API Error:", d.error);
+                    console.error("Groq API Error:", d.error);
                     appendTaxbotMsg("🤖 AI Error: " + (d.error.message || "Unknown error"), "ai");
-                } else if (d.candidates && d.candidates[0]?.content?.parts?.[0]?.text) {
-                    appendTaxbotMsg(d.candidates[0].content.parts[0].text, "ai");
+                } else if (d.choices && d.choices[0]?.message?.content) {
+                    appendTaxbotMsg(d.choices[0].message.content, "ai");
                 } else {
-                    console.warn("Gemini unexpected response or blocked:", d);
+                    console.warn("Groq unexpected response or blocked:", d);
                     appendTaxbotMsg("Connection failed. Showing preloaded result:<br><br>" + getTaxbotResponse(txt), "ai");
                 }
             } catch (e) { 
@@ -3845,7 +3848,7 @@ ${ocrText.slice(0, 500)}`
             <div class="hero-badge"><span class="pulse-dot"></span>AI-Powered · Verified CAs · Built for India</div>
             <h1><span style="display:block">India's Smartest</span><span class="grad-text">CA Platform</span></h1>
             <p class="hero-sub">Connect with verified Chartered Accountants for ITR, GST, Audit & Business Registration
-                — powered by AI matching, real-time messaging & Claude-powered document intelligence.</p>
+                — powered by AI matching, real-time messaging & Groq-powered document intelligence. </p>
             <div class="hero-cta">
                 <button class="btn btn-primary btn-lg" onclick="openAuth('signup')">Get started free</button>
                 <button class="btn btn-ghost btn-lg" onclick="goMarket()">Browse CAs</button>
@@ -3914,25 +3917,25 @@ ${ocrText.slice(0, 500)}`
                 <div class="ai-card fade-in d2">
                     <div class="ai-stripe as2"></div>
                     <div class="ai-ic">📄</div>
-                    <div class="ai-algo">ALGO: OCR.space API + Gemini Vision Analysis</div>
+                    <div class="ai-algo">ALGO: OCR.space API + Llama-3 Analysis</div>
                     <h3>Document Intelligence</h3>
-                    <p>Upload any document. OCR.space extracts text, Gemini analyzes type, flags missing fields &
+                    <p>Upload any document. OCR.space extracts text, Groq analyzes type, flags missing fields &
                         updates your risk score live.</p><span class="ai-pill pill-g">📎 Real OCR + AI</span>
                 </div>
                 <div class="ai-card fade-in d3">
                     <div class="ai-stripe as3"></div>
                     <div class="ai-ic">🤖</div>
-                    <div class="ai-algo">ALGO: RAG + Intent Classification (Gemini 1.5 Flash)</div>
+                    <div class="ai-algo">ALGO: RAG + Intent Classification (Llama-3.1)</div>
                     <h3>AI Tax Assistant</h3>
-                    <p>Live Gemini Flash chatbot trained on Indian tax law — GST rates, ITR deadlines, 80C tips,
-                        document checklists, all in real-time.</p><span class="ai-pill pill-c">💬 Live Gemini API</span>
+                    <p>Live Llama-3 chatbot trained on Indian tax law — GST rates, ITR deadlines, 80C tips,
+                        document checklists, all in real-time.</p><span class="ai-pill pill-c">💬 Live Groq API</span>
                 </div>
                 <div class="ai-card fade-in d4">
                     <div class="ai-stripe as4"></div>
                     <div class="ai-ic">🛡️</div>
-                    <div class="ai-algo">ALGO: Gemini Anomaly Detection + Firestore sync</div>
+                    <div class="ai-algo">ALGO: Llama-3 Anomaly Detection + Firestore sync</div>
                     <h3>Fraud Risk Score</h3>
-                    <p>Gemini analyzes every uploaded document and updates your live Risk Score in Firestore. CAs see
+                    <p>Groq AI analyzes every uploaded document and updates your live Risk Score in Firestore. CAs see
                         client risk before filing.</p><span class="ai-pill pill-r">🔴 Real-time score</span>
                 </div>
             </div>
@@ -3955,7 +3958,7 @@ ${ocrText.slice(0, 500)}`
                 <div class="step-item">
                     <div class="step-circle">03</div>
                     <h4>Upload & Analyze</h4>
-                    <p>OCR + Claude analyzes your docs and updates risk score live</p>
+                    <p>OCR + Groq analyzes your docs and updates risk score live</p>
                 </div>
                 <div class="step-item">
                     <div class="step-circle">04</div>
@@ -3990,7 +3993,7 @@ ${ocrText.slice(0, 500)}`
                     <h5>Company</h5><a>About Us</a><a>Privacy</a><a>Terms</a>
                 </div>
             </div>
-            <div class="ft-bottom"><span>© 2025 LedgerX. Built for India.</span><span>Firebase + Gemini AI</span></div>
+            <div class="ft-bottom"><span>© 2025 LedgerX. Built for India.</span><span>Firebase + Groq AI</span></div>
         </footer>
     </div>
 
@@ -4374,7 +4377,7 @@ ${ocrText.slice(0, 500)}`
             <div class="chat-hd-av">🤖</div>
             <div class="chat-hd-info">
                 <h4>TaxBot AI</h4>
-                <p>● Online · Gemini Flash</p>
+                <p>● Online · Llama-3</p>
             </div>
             <button class="chat-hd-close" onclick="toggleChatbot()">✕</button>
         </div>
