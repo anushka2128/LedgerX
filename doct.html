@@ -256,7 +256,7 @@
         const OCR_API_KEY = "helloworld";
         // Google Gemini API — get free key at https://aistudio.google.com/app/apikey
         const GEMINI_API_KEY = "AIzaSyAIOs7-5sdMlNjPbPMscErSisYKwkrq2KY";
-        const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
         // Gemini is integrated via direct REST API - proxy fallback remains for other services if needed
         const CLAUDE_FN_URL = "https://us-central1-ledgerx-47da3.cloudfunctions.net/askClaude";
 
