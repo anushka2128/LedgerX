@@ -265,7 +265,10 @@
 
         // OCR.space — get free key at https://ocr.space/ocrapi ("helloworld" = free tier, 25k req/month)
         const OCR_API_KEY = "helloworld";
-        // Claude is proxied through Firebase Functions — API key is stored server-side only
+        // Google Gemini API — get free key at https://aistudio.google.com/app/apikey
+        const GEMINI_API_KEY = "AIzaSyAIOs7-5sdMlNjPbPMscErSisYKwkrq2KY";
+        const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        // Gemini is integrated via direct REST API - proxy fallback remains for other services if needed
         const CLAUDE_FN_URL = "https://us-central1-ledgerx-47da3.cloudfunctions.net/askClaude";
 
         const app = initializeApp(firebaseConfig);
@@ -685,8 +688,26 @@
                 uploadBtn.textContent = "🤖 AI Analyzing...";
                 let aiAnalysis = "";
                 try {
-                    const claudeRes = await fetch(CLAUDE_FN_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 1000, system: `You are an expert Indian CA document analyzer. Analyze extracted OCR text from a financial document and provide:\n1. Document Type\n2. Key Extracted Info (PAN, dates, amounts, names, GSTIN)\n3. Completeness Check\n4. Tax Relevance\n5. Any anomalies or flags\nBe concise and structured. Use bullet points.`, messages: [{ role: "user", content: `Analyze this document text:\n\n${ocrText.slice(0, 3000)}` }] }) });
-                    const cd = await claudeRes.json(); aiAnalysis = cd.content?.[0]?.text || "Analysis unavailable.";
+                    const geminiRes = await fetch(GEMINI_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{
+                                    text: `You are an expert Indian CA document analyzer. Analyze the extracted OCR text from a financial document. Provide:
+1. Document Type
+2. Key Extracted Info (PAN, dates, amounts, names, GSTIN)
+3. Completeness Check
+4. Tax Relevance
+5. Any anomalies or flags
+
+Be concise and structured. Use bullet points. Analyze this document text:\n\n${ocrText.slice(0, 3000)}`
+                                }]
+                            }]
+                        })
+                    });
+                    const gd = await geminiRes.json();
+                    aiAnalysis = gd.candidates?.[0]?.content?.parts?.[0]?.text || "Analysis unavailable.";
                 } catch (cErr) { aiAnalysis = "[AI analysis failed: " + cErr.message + "]"; }
                 const docRef = await addDoc(collection(db, "documents"), { ownerId: currentUser.uid, ownerName: currentProfile.displayName, fileName: file.name, fileSize: formatBytes(file.size), fileURL, ocrText, aiAnalysis, analyzed: true, createdAt: serverTimestamp() });
                 updateRiskScore(ocrText, aiAnalysis);
@@ -699,8 +720,25 @@
 
         async function updateRiskScore(ocrText, aiAnalysis) {
             try {
-                const res = await fetch(CLAUDE_FN_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 150, system: 'You are a tax fraud detection AI. Output ONLY valid JSON: {"score": <0-100>, "level": "Low|Medium|High", "reason": "<one line>"}', messages: [{ role: "user", content: `Document analysis:\n${aiAnalysis}\n\nOCR text sample:\n${ocrText.slice(0, 500)}` }] }) });
-                const d = await res.json(); const txt = d.content?.[0]?.text || "{}";
+                const res = await fetch(GEMINI_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `You are a tax fraud detection AI. Analyze the analysis and text provided. Output ONLY valid JSON: {"score": <0-100>, "level": "Low|Medium|High", "reason": "<one line>"}
+
+Analysis:
+${aiAnalysis}
+
+OCR text sample:
+${ocrText.slice(0, 500)}`
+                            }]
+                        }]
+                    })
+                });
+                const d = await res.json();
+                const txt = d.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
                 const clean = txt.replace(/```json|```/g, "").trim();
                 const risk = JSON.parse(clean);
                 if (risk.score !== undefined) {
@@ -720,11 +758,20 @@
             const tp = document.createElement("div"); tp.className = "cmsg cmsg-ai"; tp.id = tid;
             tp.innerHTML = '<div class="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div>';
             msgs.appendChild(tp); msgs.scrollTop = msgs.scrollHeight;
-            // If API key is managed by backend, directly proxy to Firebase Functions
             try {
-                const res = await fetch(CLAUDE_FN_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 800, system: `You are TaxBot, an expert AI tax assistant for LedgerX — India's CA marketplace. You specialize in ITR filing, GST compliance, TDS/TCS, advance tax, capital gains, NRI taxation, business registration, and FY 2024-25 compliance deadlines. Keep answers concise, accurate, and well-structured. Use numbered steps for procedures. Always be helpful and specific to Indian tax law.`, messages: [{ role: "user", content: txt }] }) });
+                const res = await fetch(GEMINI_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `You are TaxBot, an expert AI tax assistant for LedgerX — India's CA marketplace. You specialize in ITR filing, GST compliance, TDS/TCS, advance tax, capital gains, NRI taxation, business registration, and FY 2024-25 compliance deadlines. Keep answers concise, accurate, and well-structured. Use numbered steps for procedures. Always be helpful and specific to Indian tax law. User Query: ${txt}`
+                            }]
+                        }]
+                    })
+                });
                 const d = await res.json(); el(tid)?.remove();
-                appendTaxbotMsg(d.content?.[0]?.text || getTaxbotResponse(txt), "ai");
+                appendTaxbotMsg(d.candidates?.[0]?.content?.parts?.[0]?.text || getTaxbotResponse(txt), "ai");
             } catch (e) { el(tid)?.remove(); appendTaxbotMsg(getTaxbotResponse(txt), "ai"); }
         };
         function appendTaxbotMsg(text, role) {
@@ -3862,25 +3909,25 @@
                 <div class="ai-card fade-in d2">
                     <div class="ai-stripe as2"></div>
                     <div class="ai-ic">📄</div>
-                    <div class="ai-algo">ALGO: OCR.space API + Claude Vision Analysis</div>
+                    <div class="ai-algo">ALGO: OCR.space API + Gemini Vision Analysis</div>
                     <h3>Document Intelligence</h3>
-                    <p>Upload any document. OCR.space extracts text, Claude analyzes type, flags missing fields &
+                    <p>Upload any document. OCR.space extracts text, Gemini analyzes type, flags missing fields &
                         updates your risk score live.</p><span class="ai-pill pill-g">📎 Real OCR + AI</span>
                 </div>
                 <div class="ai-card fade-in d3">
                     <div class="ai-stripe as3"></div>
                     <div class="ai-ic">🤖</div>
-                    <div class="ai-algo">ALGO: RAG + Intent Classification (Claude Sonnet)</div>
+                    <div class="ai-algo">ALGO: RAG + Intent Classification (Gemini 1.5 Flash)</div>
                     <h3>AI Tax Assistant</h3>
-                    <p>Live Claude Sonnet chatbot trained on Indian tax law — GST rates, ITR deadlines, 80C tips,
-                        document checklists, all in real-time.</p><span class="ai-pill pill-c">💬 Live Claude API</span>
+                    <p>Live Gemini Flash chatbot trained on Indian tax law — GST rates, ITR deadlines, 80C tips,
+                        document checklists, all in real-time.</p><span class="ai-pill pill-c">💬 Live Gemini API</span>
                 </div>
                 <div class="ai-card fade-in d4">
                     <div class="ai-stripe as4"></div>
                     <div class="ai-ic">🛡️</div>
-                    <div class="ai-algo">ALGO: Claude Anomaly Detection + Firestore sync</div>
+                    <div class="ai-algo">ALGO: Gemini Anomaly Detection + Firestore sync</div>
                     <h3>Fraud Risk Score</h3>
-                    <p>Claude analyzes every uploaded document and updates your live Risk Score in Firestore. CAs see
+                    <p>Gemini analyzes every uploaded document and updates your live Risk Score in Firestore. CAs see
                         client risk before filing.</p><span class="ai-pill pill-r">🔴 Real-time score</span>
                 </div>
             </div>
@@ -3938,7 +3985,7 @@
                     <h5>Company</h5><a>About Us</a><a>Privacy</a><a>Terms</a>
                 </div>
             </div>
-            <div class="ft-bottom"><span>© 2025 LedgerX. Built for India.</span><span>Firebase + Claude AI</span></div>
+            <div class="ft-bottom"><span>© 2025 LedgerX. Built for India.</span><span>Firebase + Gemini AI</span></div>
         </footer>
     </div>
 
@@ -4170,7 +4217,7 @@
                         </div>
                         <div style="font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;color:var(--green);margin-top:12px"
                             id="cd-risk-num">—</div>
-                        <div style="font-size:.71rem;color:var(--t3)">Claude AI Analysis</div>
+                        <div style="font-size:.71rem;color:var(--t3)">Gemini AI Analysis</div>
                         <div style="margin-top:10px;font-size:.81rem;color:var(--t2);line-height:1.7"
                             id="cd-risk-reason">Upload documents to generate your risk score.</div>
                     </div>
@@ -4322,7 +4369,7 @@
             <div class="chat-hd-av">🤖</div>
             <div class="chat-hd-info">
                 <h4>TaxBot AI</h4>
-                <p>● Online · Claude Sonnet</p>
+                <p>● Online · Gemini Flash</p>
             </div>
             <button class="chat-hd-close" onclick="toggleChatbot()">✕</button>
         </div>
